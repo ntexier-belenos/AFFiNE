@@ -63,6 +63,7 @@ All code interactions (commits, issues, branches, tests, etc.) are performed **e
 
 ### 💬 Comments
 
+- All comments are in English.
 - Add comments only where necessary:
 
   - For complex logic
@@ -103,7 +104,7 @@ yarn build
 To launch both the backend and frontend simultaneously:
 
 ```bash
-yarn @affine/server dev & yarn @affine/web dev
+yarn affine server dev & yarn affine web dev
 ```
 
 > You may also run frontend and backend separately depending on your task.
