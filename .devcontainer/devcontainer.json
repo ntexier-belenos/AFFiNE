@@ -2,5 +2,6 @@
   "name": "AFFiNE (Dev Container)",
   "dockerComposeFile": ["compose.yml"],
   "service": "affine",
-  "workspaceFolder": "/workspaces/AFFiNE"
+  "workspaceFolder": "/workspaces/AFFiNE",
+  "postCreateCommand": "bash .devcontainer/setup.sh"
 }
