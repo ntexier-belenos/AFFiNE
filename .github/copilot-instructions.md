@@ -61,6 +61,55 @@ All code interactions (commits, issues, branches, tests, etc.) are performed **e
 - Prefer readability over premature optimization
 - Avoid magic values; use constants or config files
 
+### 📦 Import Guidelines
+
+- **Always use public package exports**: Import from `@blocksuite/package-name` or `@blocksuite/package-name/exported-path`
+- **Never import from `/src` paths**: Avoid imports like `../../../data-view/src/...`
+- **Use proper module boundaries**: Respect package architecture and don't bypass intended APIs
+- **Avoid circular dependencies**: Never import from a public package export within the same package's internal modules
+- **Example of correct imports**:
+
+  ```typescript
+  // ✅ Correct - using public exports from external packages
+  import { initializeAllIds } from '@blocksuite/data-view/property-presets';
+  import { PropertyConfig } from '@blocksuite/data-view';
+
+  // ✅ Correct - using direct imports within the same package
+  import { initializeAllIds } from '../../property-presets/id/generator.js';
+
+  // ❌ Incorrect - importing from src paths
+  import { initializeAllIds } from '../../../data-view/src/property-presets/id/generator';
+
+  // ❌ Incorrect - circular dependency (importing public export from within same package)
+  // In data-view/src/core/common/property-menu.ts:
+  import { someFunction } from '@blocksuite/data-view/property-presets'; // Creates cycle!
+  ```
+
+### 🔄 Dependency Management
+
+- **Watch for circular dependencies**: ESLint will catch import cycles that can break module loading
+- **Within the same package**: Use relative imports to avoid circular dependencies
+- **Between packages**: Use public package exports
+- **Internal modules**: Should never import from their own package's public exports
+
+### 🔍 Type Safety & Architecture
+
+- **Respect type boundaries**: Use the correct object types from the appropriate architectural layer
+  - `ColumnDataType`: Raw database model data
+  - `Property`: View-layer objects with reactive features
+- **Access data through proper channels**: Use view managers and data sources as intended
+- **Example of correct property access**:
+
+  ```typescript
+  // ✅ Correct - using view manager to get Property objects
+  const currentView = this.viewManager.currentView$.value;
+  const property = currentView?.propertyGetOrCreate(propertyId);
+
+  // ❌ Incorrect - mixing raw model data with view functions
+  const columnData = getProperty(this._model, propertyId);
+  initializeAllIds(columnData); // Type error!
+  ```
+
 ### 💬 Comments
 
 - All comments are in English.
@@ -87,6 +136,27 @@ All code interactions (commits, issues, branches, tests, etc.) are performed **e
   yarn test
   yarn test:e2e
   ```
+
+### 🔧 Code Quality & Linting
+
+- **Run ESLint before committing**: Ensure code follows project standards
+- **Fix auto-fixable issues**: Use `npx eslint --fix` for automatic corrections
+- **Handle unused imports**: Remove unused imports to keep code clean
+- **Catch parameter handling**: Use `_` prefix for intentionally unused parameters:
+
+  ```typescript
+  // ✅ Correct - marked as intentionally unused
+  } catch (_error) {
+    // fail silently
+  }
+
+  // ✅ Also correct - no parameter if not used
+  } catch {
+    // fail silently
+  }
+  ```
+
+- **Import sorting**: Let ESLint auto-sort imports with `--fix` option
 
 ---
 
