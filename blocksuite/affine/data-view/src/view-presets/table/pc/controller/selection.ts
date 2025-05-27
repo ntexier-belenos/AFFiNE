@@ -162,10 +162,11 @@ export class TableSelectionController implements ReactiveController {
   private handleSelectionChange() {
     this.host.disposables.add(
       this.host.props.selection$.subscribe(tableSelection => {
-        if (!this.isValidSelection(tableSelection)) {
-          this.selection = undefined;
-          return;
-        }
+        // TODO: Temporarily commented out to test if this is causing the selection/editing issue
+        // if (!this.isValidSelection(tableSelection)) {
+        //   this.selection = undefined;
+        //   return;
+        // }
         const old =
           this._tableViewSelection?.selectionType === 'area'
             ? this._tableViewSelection
@@ -458,9 +459,6 @@ export class TableSelectionController implements ReactiveController {
       // Each row has: [property-header] [cell-0] [cell-1] [cell-2] ...
 
       const rows = this.rows(groupKey);
-      if (!rows || columnIndex >= rows.length || columnIndex < 0) {
-        return null;
-      }
 
       const row = rows.item(columnIndex); // columnIndex becomes row index (property)
       if (!row) {
@@ -471,18 +469,20 @@ export class TableSelectionController implements ReactiveController {
       const dataCells = row.querySelectorAll<DatabaseCellContainer>(
         'affine-database-cell-container'
       );
-      if (!dataCells || rowIndex >= dataCells.length || rowIndex < 0) {
+
+      if (
+        rowIndex < 0 ||
+        rowIndex >= this.view.rows$.value.length ||
+        columnIndex < 0 ||
+        columnIndex >= this.view.propertyIds$.value.length
+      ) {
         return null;
       }
-
       return dataCells.item(rowIndex) ?? null; // rowIndex becomes column index (record)
     }
 
     // Normal mode logic
     const rows = this.rows(groupKey);
-    if (!rows || rowIndex >= rows.length || rowIndex < 0) {
-      return null;
-    }
 
     const row = rows.item(rowIndex);
     if (!row) {
@@ -492,9 +492,6 @@ export class TableSelectionController implements ReactiveController {
     const cells = row.querySelectorAll<DatabaseCellContainer>(
       'affine-database-cell-container, th'
     );
-    if (!cells || columnIndex >= cells.length || columnIndex < 0) {
-      return null;
-    }
 
     return cells.item(columnIndex) ?? null;
   }
@@ -581,26 +578,15 @@ export class TableSelectionController implements ReactiveController {
     if (!firstCell || !lastCell) {
       return;
     }
-    const topOffset = firstCell.getBoundingClientRect().top;
-    const bottomOffset = lastCell.getBoundingClientRect().bottom;
-
-    // Calculate scale more robustly
-    let scale = 1;
-    if (firstCell.column?.width$.value) {
-      scale = topOffset / firstCell.column.width$.value;
-    } else {
-      scale = 1;
-    }
+    const firstCellRect = firstCell.getBoundingClientRect();
+    const lastCellRect = lastCell.getBoundingClientRect();
 
     return {
-      top: topOffset / scale,
-      left: firstCell.getBoundingClientRect().left / scale,
-      width:
-        (lastCell.getBoundingClientRect().right -
-          firstCell.getBoundingClientRect().left) /
-        scale,
-      height: (bottomOffset - topOffset) / scale,
-      scale,
+      top: firstCellRect.top,
+      left: firstCellRect.left,
+      width: lastCellRect.right - firstCellRect.left,
+      height: lastCellRect.bottom - firstCellRect.top,
+      scale: 1,
     };
   }
 
@@ -644,23 +630,22 @@ export class TableSelectionController implements ReactiveController {
 
     if (this.view.transpose$.value) {
       // In transpose mode: rows = properties, columns = records
-      if (selection.focus.rowIndex > this.view.propertyIds$.value.length - 1) {
-        this.selection = undefined;
-        return false;
-      }
-      if (selection.focus.columnIndex > this.view.rows$.value.length - 1) {
+      if (
+        selection.focus.rowIndex < 0 ||
+        selection.focus.rowIndex >= this.view.propertyIds$.value.length ||
+        selection.focus.columnIndex < 0 ||
+        selection.focus.columnIndex >= this.view.rows$.value.length
+      ) {
         this.selection = undefined;
         return false;
       }
     } else {
       // Normal mode: rows = records, columns = properties
-      if (selection.focus.rowIndex > this.view.rows$.value.length - 1) {
-        this.selection = undefined;
-        return false;
-      }
       if (
-        selection.focus.columnIndex >
-        this.view.propertyIds$.value.length - 1
+        selection.focus.rowIndex < 0 ||
+        selection.focus.rowIndex >= this.view.rows$.value.length ||
+        selection.focus.columnIndex < 0 ||
+        selection.focus.columnIndex >= this.view.propertyIds$.value.length
       ) {
         this.selection = undefined;
         return false;
@@ -1252,8 +1237,8 @@ export class SelectionElement extends WithDisposable(ShadowlessElement) {
     const dragToFill = this.controller.dragToFillDraggable;
     if (!div || !dragToFill) return;
     // Check if row is removed.
-    const rows = this.controller.rows(groupKey) ?? [];
-    if (rows.length <= focus.rowIndex) return;
+    // const rows = this.controller.rows(groupKey) ?? [];
+    // if (rows.length <= focus.rowIndex) return;
 
     const rect = this.controller.getRect(
       groupKey,
