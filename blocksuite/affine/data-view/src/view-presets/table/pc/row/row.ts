@@ -175,6 +175,10 @@ export class TableRowView extends SignalWatcher(
   }
 
   protected override render(): unknown {
+    // Mode transposé : on ne rend rien ici, le parent gère tout le layout
+    if (this.property) {
+      return nothing;
+    }
     const view = this.view;
     return html`
       ${view.readonly$.value
@@ -277,7 +281,9 @@ export class TableRowView extends SignalWatcher(
           `;
         }
       )}
-      <div class="database-cell add-column-button"></div>
+      ${!this.view.transpose$.value
+        ? html`<div class="database-cell add-column-button"></div>`
+        : nothing}
     `;
   }
 
@@ -292,6 +298,12 @@ export class TableRowView extends SignalWatcher(
 
   @property({ attribute: false })
   accessor view!: TableSingleView;
+
+  // Ajout pour mode transposé
+  @property({ attribute: false })
+  accessor property: unknown = undefined;
+  @property({ attribute: false })
+  accessor propertyIndex: number = -1;
 }
 
 declare global {
