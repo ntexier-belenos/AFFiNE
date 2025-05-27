@@ -23,6 +23,13 @@ source $HOME/.cargo/env
 rustup install 1.86.0
 rustup default 1.86.0
 
+npm install -g @withgraphite/graphite-cli@stable
+
+if [ -v GRAPHITE_TOKEN ];then
+    gt auth --token $GRAPHITE_TOKEN
+fi
+
+
 # yarn install
 echo "Installing Yarn packages..."
 yarn install
