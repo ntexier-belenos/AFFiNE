@@ -85,7 +85,15 @@ export class TableSelectionController implements ReactiveController {
         focus.rowIndex,
         focus.columnIndex
       );
-      const cell = container?.cell;
+      if (!container) {
+        // If we can't find the cell container, don't try to edit
+        this.host.props.setSelection({
+          ...selection,
+          isEditing: false,
+        });
+        return;
+      }
+      const cell = container.cell;
       const isEditing = cell ? cell.beforeEnterEditMode() : true;
       this.host.props.setSelection({
         ...selection,
@@ -189,7 +197,7 @@ export class TableSelectionController implements ReactiveController {
             old.focus.rowIndex,
             old.focus.columnIndex
           );
-          if (container) {
+          if (container && container.isEditing$) {
             const cell = container.cell;
             if (old.isEditing) {
               cell?.beforeExitEditingMode();
@@ -206,7 +214,7 @@ export class TableSelectionController implements ReactiveController {
             newSelection.focus.rowIndex,
             newSelection.focus.columnIndex
           );
-          if (container) {
+          if (container && container.isEditing$) {
             const cell = container.cell;
             if (newSelection.isEditing) {
               container.isEditing$.value = true;
@@ -441,11 +449,54 @@ export class TableSelectionController implements ReactiveController {
     groupKey: string | undefined,
     rowIndex: number,
     columnIndex: number
-  ): DatabaseCellContainer | undefined {
-    const row = this.rows(groupKey)?.item(rowIndex);
-    return row
-      ?.querySelectorAll('affine-database-cell-container')
-      .item(columnIndex);
+  ): DatabaseCellContainer | null {
+    if (this.view.transpose$.value) {
+      // In transpose mode, we need to swap coordinates:
+      // - Original rowIndex becomes columnIndex (property becomes row in transposed table)
+      // - Original columnIndex becomes rowIndex (record becomes column in transposed table)
+      // DOM structure: each property is a row with data-row-index="${propertyIdx + 1}"
+      // Each row has: [property-header] [cell-0] [cell-1] [cell-2] ...
+
+      const rows = this.rows(groupKey);
+      if (!rows || columnIndex >= rows.length || columnIndex < 0) {
+        return null;
+      }
+
+      const row = rows.item(columnIndex); // columnIndex becomes row index (property)
+      if (!row) {
+        return null;
+      }
+
+      // Get only the data cells, not the property header
+      const dataCells = row.querySelectorAll<DatabaseCellContainer>(
+        'affine-database-cell-container'
+      );
+      if (!dataCells || rowIndex >= dataCells.length || rowIndex < 0) {
+        return null;
+      }
+
+      return dataCells.item(rowIndex) ?? null; // rowIndex becomes column index (record)
+    }
+
+    // Normal mode logic
+    const rows = this.rows(groupKey);
+    if (!rows || rowIndex >= rows.length || rowIndex < 0) {
+      return null;
+    }
+
+    const row = rows.item(rowIndex);
+    if (!row) {
+      return null;
+    }
+
+    const cells = row.querySelectorAll<DatabaseCellContainer>(
+      'affine-database-cell-container, th'
+    );
+    if (!cells || columnIndex >= cells.length || columnIndex < 0) {
+      return null;
+    }
+
+    return cells.item(columnIndex) ?? null;
   }
 
   getGroup(groupKey: string | undefined) {
@@ -464,34 +515,91 @@ export class TableSelectionController implements ReactiveController {
     bottom: number,
     left: number,
     right: number
-  ):
-    | undefined
-    | {
-        top: number;
-        left: number;
-        width: number;
-        height: number;
-        scale: number;
-      } {
-    const rows = this.rows(groupKey);
-    const topRow = rows?.item(top);
-    const bottomRow = rows?.item(bottom);
-    if (!topRow || !bottomRow) {
+  ) {
+    if (this.view.transpose$.value) {
+      // In transpose mode, we need to swap coordinates:
+      // - Original top/bottom (row indices) become left/right (property/row selection in transposed table)
+      // - Original left/right (column indices) become top/bottom (record/column selection in transposed table)
+
+      const rows = this.rows(groupKey);
+      if (!rows) {
+        return;
+      }
+
+      // Swap the parameters for transposed mode
+      const firstRow = rows.item(left); // left becomes row index (property)
+      const lastRow = rows.item(right); // right becomes row index (property)
+      if (!firstRow || !lastRow) {
+        return;
+      }
+
+      // Get data cells only (not property headers)
+      const firstRowDataCells =
+        firstRow.querySelectorAll<DatabaseCellContainer>(
+          'affine-database-cell-container'
+        );
+      const lastRowDataCells = lastRow.querySelectorAll<DatabaseCellContainer>(
+        'affine-database-cell-container'
+      );
+
+      if (!firstRowDataCells || !lastRowDataCells) {
+        return;
+      }
+
+      const firstCell = firstRowDataCells.item(top); // top becomes column index (record)
+      const lastCell = lastRowDataCells.item(bottom); // bottom becomes column index (record)
+      if (!firstCell || !lastCell) {
+        return;
+      }
+
+      const firstCellRect = firstCell.getBoundingClientRect();
+      const lastCellRect = lastCell.getBoundingClientRect();
+
+      return {
+        top: firstCellRect.top,
+        left: firstCellRect.left,
+        width: lastCellRect.right - firstCellRect.left,
+        height: lastCellRect.bottom - firstCellRect.top,
+        scale: 1,
+      };
+    }
+
+    // Normal mode logic
+    const cellSelector = 'affine-database-cell-container, th';
+
+    const firstRowCells = this.rows(groupKey)
+      ?.item(top)
+      ?.querySelectorAll<DatabaseCellContainer>(cellSelector);
+    const lastRowCells = this.rows(groupKey)
+      ?.item(bottom)
+      ?.querySelectorAll<DatabaseCellContainer>(cellSelector);
+    if (!firstRowCells || !lastRowCells) {
       return;
     }
-    const topCells = topRow.querySelectorAll('affine-database-cell-container');
-    const leftCell = topCells.item(left);
-    const rightCell = topCells.item(right);
-    if (!leftCell || !rightCell) {
+    const firstCell = firstRowCells.item(left);
+    const lastCell = lastRowCells.item(right);
+    if (!firstCell || !lastCell) {
       return;
     }
-    const leftRect = leftCell.getBoundingClientRect();
-    const scale = leftRect.width / leftCell.column.width$.value;
+    const topOffset = firstCell.getBoundingClientRect().top;
+    const bottomOffset = lastCell.getBoundingClientRect().bottom;
+
+    // Calculate scale more robustly
+    let scale = 1;
+    if (firstCell.column?.width$.value) {
+      scale = topOffset / firstCell.column.width$.value;
+    } else {
+      scale = 1;
+    }
+
     return {
-      top: leftRect.top / scale,
-      left: leftRect.left / scale,
-      width: (rightCell.getBoundingClientRect().right - leftRect.left) / scale,
-      height: (bottomRow.getBoundingClientRect().bottom - leftRect.top) / scale,
+      top: topOffset / scale,
+      left: firstCell.getBoundingClientRect().left / scale,
+      width:
+        (lastCell.getBoundingClientRect().right -
+          firstCell.getBoundingClientRect().left) /
+        scale,
+      height: (bottomOffset - topOffset) / scale,
       scale,
     };
   }
@@ -533,14 +641,32 @@ export class TableSelectionController implements ReactiveController {
     if (!selection || selection.selectionType === 'row') {
       return true;
     }
-    if (selection.focus.rowIndex > this.view.rows$.value.length - 1) {
-      this.selection = undefined;
-      return false;
+
+    if (this.view.transpose$.value) {
+      // In transpose mode: rows = properties, columns = records
+      if (selection.focus.rowIndex > this.view.propertyIds$.value.length - 1) {
+        this.selection = undefined;
+        return false;
+      }
+      if (selection.focus.columnIndex > this.view.rows$.value.length - 1) {
+        this.selection = undefined;
+        return false;
+      }
+    } else {
+      // Normal mode: rows = records, columns = properties
+      if (selection.focus.rowIndex > this.view.rows$.value.length - 1) {
+        this.selection = undefined;
+        return false;
+      }
+      if (
+        selection.focus.columnIndex >
+        this.view.propertyIds$.value.length - 1
+      ) {
+        this.selection = undefined;
+        return false;
+      }
     }
-    if (selection.focus.columnIndex > this.view.propertyIds$.value.length - 1) {
-      this.selection = undefined;
-      return false;
-    }
+
     return true;
   }
 

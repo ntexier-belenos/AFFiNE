@@ -56,6 +56,10 @@ export class TableSingleView extends SingleViewBase<TableViewData> {
     return this.data$.value?.sort;
   });
 
+  transpose$ = computed(() => {
+    return this.data$.value?.transpose ?? false;
+  });
+
   private readonly sortManager = this.traitSet(
     sortTraitKey,
     new SortManager(this.sortList$, this, {
@@ -263,6 +267,14 @@ export class TableSingleView extends SingleViewBase<TableViewData> {
       });
     }
   );
+
+  transposeUpdate(transpose: boolean): void {
+    this.dataUpdate(() => {
+      return {
+        transpose,
+      };
+    });
+  }
 }
 
 type TableColumnData = TableViewData['columns'][number];

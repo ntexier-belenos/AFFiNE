@@ -62,6 +62,8 @@ const styles = css`
     line-height: 20px;
     color: var(--affine-text-secondary-color);
   }
+    font-weight: 600;
+  }
 `;
 
 export class TableGroup extends SignalWatcher(
@@ -243,6 +245,12 @@ export class TableGroup extends SignalWatcher(
   }
 
   private renderRows(rows: Row[]) {
+    // Check if table is in transpose mode
+    if (this.view.transpose$.value) {
+      return this.renderTransposedTable(rows);
+    }
+
+    // Normal table rendering
     return html`
       <affine-database-column-header
         .renderGroupHeader="${this.renderGroupHeader}"
@@ -282,6 +290,136 @@ export class TableGroup extends SignalWatcher(
       </affine-database-column-stats>
     `;
   }
+
+  private renderTransposedTable(rows: Row[]) {
+    const properties = this.view.properties$.value;
+
+    return html`
+      <!-- Transposed body: each property becomes a row -->
+      <div class="affine-database-block-rows">
+        <!-- Property rows: each property becomes a row -->
+        ${repeat(
+          properties,
+          property => property.id,
+          (property, propertyIdx) => html`
+            <data-view-table-row
+              class="affine-database-block-row data-view-table-row"
+              data-property-id="${property.id}"
+              data-row-index="${propertyIdx + 1}"
+              .dataViewEle="${this.dataViewEle}"
+              .view="${this.view}"
+              .property="${property}"
+              .propertyIndex="${propertyIdx}"
+              transposeMode
+            >
+              ${!this.view.readonly$.value
+                ? html`<div class="data-view-table-left-bar"></div>`
+                : null}
+              <!-- Property header as first cell -->
+              <div
+                class="database-cell affine-database-column"
+                style="width: ${properties[0]?.width$.value ||
+                150}px; min-width: ${properties[0]?.width$.value || 150}px;"
+              >
+                <affine-database-header-column
+                  .column="${property}"
+                  .tableViewManager="${this.view}"
+                  data-column-id="${property.id}"
+                  data-column-index="${propertyIdx}"
+                ></affine-database-header-column>
+              </div>
+              <div class="cell-divider"></div>
+              <!-- Data cells for each original row (now displayed as columns) -->
+              ${repeat(
+                rows,
+                row => row.rowId,
+                (row, rowIdx) => {
+                  const titleProperty = properties.find(
+                    p => p.type$.value === 'title'
+                  );
+                  const columnWidth = titleProperty?.width$.value || 150;
+                  return html`
+                    <div
+                      class="database-cell"
+                      style="width: ${columnWidth}px; min-width: ${columnWidth}px;"
+                    >
+                      <affine-database-cell-container
+                        .view="${this.view}"
+                        .column="${property}"
+                        .rowId="${row.rowId}"
+                        data-row-id="${row.rowId}"
+                        .rowIndex="${rowIdx}"
+                        data-row-index="${rowIdx}"
+                        .columnId="${property.id}"
+                        data-column-id="${property.id}"
+                        .columnIndex="${propertyIdx}"
+                        data-column-index="${propertyIdx}"
+                        .readonly="${false}"
+                      ></affine-database-cell-container>
+                    </div>
+                    <div class="cell-divider"></div>
+                  `;
+                }
+              )}
+            </data-view-table-row>
+          `
+        )}
+
+        <!-- Add new property row -->
+        ${this.view.readonly$.value
+          ? null
+          : html`
+              <div
+                class="affine-database-block-row data-view-table-row add-property-row"
+              >
+                <div class="data-view-table-left-bar"></div>
+
+                <!-- Add property button -->
+                <div
+                  class="database-cell affine-database-column add-property-cell"
+                  style="width: ${properties[0]?.width$.value ||
+                  150}px; min-width: ${properties[0]?.width$.value || 150}px;"
+                >
+                  <div
+                    class="data-view-table-group-add-row-button dv-icon-16"
+                    @click="${this.clickAddProperty}"
+                    data-test-id="affine-database-add-property-button"
+                    role="button"
+                  >
+                    ${PlusIcon()}<span style="font-size: 12px"
+                      >Add Property</span
+                    >
+                  </div>
+                </div>
+              </div>
+            `}
+      </div>
+
+      <affine-database-column-stats .view="${this.view}" .group="${this.group}">
+      </affine-database-column-stats>
+    `;
+  }
+
+  private readonly clickAddProperty = () => {
+    // Get the table view manager to add a new property
+    this.view.propertyAdd('end');
+
+    // Focus on the newly added property after a brief delay
+    requestAnimationFrame(() => {
+      const properties = this.view.properties$.value;
+      const newPropertyIndex = properties.length - 1;
+      const selectionController = this.viewEle.selectionController;
+
+      selectionController.selection = TableViewAreaSelection.create({
+        groupKey: this.group?.key,
+        focus: {
+          rowIndex: newPropertyIndex + 1, // +1 because first row is headers
+          columnIndex: 0, // Focus on property name column
+        },
+        isEditing: true,
+      });
+    });
+  };
 
   override connectedCallback(): void {
     super.connectedCallback();

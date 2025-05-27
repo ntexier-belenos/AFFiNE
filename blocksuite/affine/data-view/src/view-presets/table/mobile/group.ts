@@ -137,6 +137,12 @@ export class MobileTableGroup extends SignalWatcher(
   }
 
   private renderRows(rows: Row[]) {
+    // Check if table is in transpose mode
+    if (this.view.transpose$.value) {
+      return this.renderTransposedTable(rows);
+    }
+
+    // Normal mobile table rendering
     return html`
       <mobile-table-header
         .renderGroupHeader="${this.renderGroupHeader}"
@@ -177,6 +183,152 @@ export class MobileTableGroup extends SignalWatcher(
     `;
   }
 
+  private renderTransposedTable(rows: Row[]) {
+    const properties = this.view.properties$.value;
+
+    return html`
+      <!-- Transposed body: each property becomes a row -->
+      <div class="mobile-affine-table-body">
+        <!-- First row: Data row headers with "New record" at the end -->
+        <div class="mobile-table-row transpose-header-row">
+          <!-- Empty cell for property header column -->
+          <div
+            class="mobile-table-cell"
+            style="width: 120px; min-width: 120px;"
+          ></div>
+
+          <!-- Row headers (original record titles) -->
+          ${repeat(
+            rows,
+            row => row.rowId,
+            (row, rowIdx) => {
+              const titleProperty = properties.find(
+                p => p.type$.value === 'title'
+              );
+
+              return html`
+                <div
+                  class="mobile-table-cell"
+                  style="width: 100px; min-width: 100px;"
+                >
+                  <mobile-table-cell
+                    .view="${this.view}"
+                    .column="${titleProperty}"
+                    .rowId="${row.rowId}"
+                    data-row-id="${row.rowId}"
+                    .rowIndex="${rowIdx}"
+                    data-row-index="${rowIdx}"
+                    .columnId="${titleProperty?.id}"
+                    data-column-id="${titleProperty?.id}"
+                    .columnIndex="0"
+                    data-column-index="0"
+                  ></mobile-table-cell>
+                </div>
+              `;
+            }
+          )}
+
+          <!-- "New record" button at the end -->
+          ${this.view.readonly$.value
+            ? null
+            : html`
+                <div
+                  class="mobile-table-cell"
+                  style="width: 100px; min-width: 100px;"
+                >
+                  <div
+                    class="data-view-table-group-add-row-button dv-icon-16 transpose-new-record"
+                    @click="${this.clickAddRow}"
+                    data-test-id="affine-database-add-row-button"
+                    role="button"
+                  >
+                    ${PlusIcon()}<span style="font-size: 10px">New Record</span>
+                  </div>
+                </div>
+              `}
+        </div>
+
+        <!-- Property rows: each property becomes a row -->
+        ${repeat(
+          properties,
+          property => property.id,
+          (property, propertyIdx) => html`
+            <div
+              class="mobile-table-row"
+              data-property-id="${property.id}"
+              data-row-index="${propertyIdx + 1}"
+            >
+              <!-- Property header as first cell -->
+              <div
+                class="mobile-table-cell"
+                style="width: 120px; min-width: 120px;"
+              >
+                <mobile-table-column-header
+                  .column="${property}"
+                  .tableViewManager="${this.view}"
+                  data-column-id="${property.id}"
+                  data-column-index="${propertyIdx}"
+                ></mobile-table-column-header>
+              </div>
+
+              <!-- Data cells for each original row (now displayed as columns) -->
+              ${repeat(
+                rows,
+                row => row.rowId,
+                (row, rowIdx) => html`
+                  <div
+                    class="mobile-table-cell"
+                    style="width: 100px; min-width: 100px;"
+                  >
+                    <mobile-table-cell
+                      .view="${this.view}"
+                      .column="${property}"
+                      .rowId="${row.rowId}"
+                      data-row-id="${row.rowId}"
+                      .rowIndex="${rowIdx}"
+                      data-row-index="${rowIdx}"
+                      .columnId="${property.id}"
+                      data-column-id="${property.id}"
+                      .columnIndex="${propertyIdx}"
+                      data-column-index="${propertyIdx}"
+                    ></mobile-table-cell>
+                  </div>
+                `
+              )}
+            </div>
+          `
+        )}
+
+        <!-- Add new property row -->
+        ${this.view.readonly$.value
+          ? null
+          : html`
+              <div class="mobile-table-row add-property-row">
+                <!-- Add property button -->
+                <div
+                  class="mobile-table-cell add-property-cell"
+                  style="width: 120px; min-width: 120px;"
+                >
+                  <div
+                    class="data-view-table-group-add-row-button dv-icon-16"
+                    @click="${this.clickAddProperty}"
+                    data-test-id="affine-database-add-property-button"
+                    role="button"
+                  >
+                    ${PlusIcon()}<span style="font-size: 10px"
+                      >Add Property</span
+                    >
+                  </div>
+                </div>
+              </div>
+            `}
+      </div>
+
+      <affine-database-column-stats .view="${this.view}" .group="${this.group}">
+      </affine-database-column-stats>
+    `;
+  }
+
   override render() {
     return this.renderRows(this.rows);
   }
@@ -195,6 +347,27 @@ export class MobileTableGroup extends SignalWatcher(
 
   @property({ attribute: false })
   accessor viewEle!: DataViewTable;
+
+  private readonly clickAddProperty = () => {
+    // Get the table view manager to add a new property
+    this.view.propertyAdd('end');
+
+    // Focus on the newly added property after a brief delay
+    requestAnimationFrame(() => {
+      const properties = this.view.properties$.value;
+      const newPropertyIndex = properties.length - 1;
+      const selectionController = this.viewEle.selectionController;
+
+      selectionController.selection = TableViewAreaSelection.create({
+        groupKey: this.group?.key,
+        focus: {
+          rowIndex: newPropertyIndex + 1, // +1 because first row is headers
+          columnIndex: 0, // Focus on property name column
+        },
+        isEditing: true,
+      });
+    });
+  };
 }
 
 declare global {

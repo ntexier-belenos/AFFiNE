@@ -18,6 +18,7 @@ type DataType = {
   groupBy?: GroupBy;
   groupProperties?: GroupProperty[];
   sort?: Sort;
+  transpose?: boolean;
   header?: {
     titleColumn?: string;
     iconColumn?: string;

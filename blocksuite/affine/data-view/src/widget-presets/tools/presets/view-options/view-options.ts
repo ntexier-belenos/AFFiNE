@@ -319,6 +319,18 @@ export const popViewOptions = (
                     }
                     return html``;
                   },
+                  // Table-specific options
+                  ...(view.type === 'table'
+                    ? [
+                        menu.toggleSwitch({
+                          name: 'Transpose',
+                          on: (view as any).transpose$.value,
+                          onChange: value => {
+                            (view as any).transposeUpdate(value);
+                          },
+                        }),
+                      ]
+                    : []),
                   // menu.toggleSwitch({
                   //   name: 'Show block icon',
                   //   on: true,
