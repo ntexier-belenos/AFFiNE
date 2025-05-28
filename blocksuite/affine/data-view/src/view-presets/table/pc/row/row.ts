@@ -137,12 +137,10 @@ export class TableRowView extends SignalWatcher(
       return;
     }
 
-    // En mode transposé, ignorer les clics sur l'en-tête de propriété
     if (this.view.transpose$.value && this.property) {
       const ele = e.target as HTMLElement;
       const headerColumn = ele.closest('affine-database-header-column');
       if (headerColumn) {
-        // Le clic provient de l'en-tête de propriété, laisser son gestionnaire gérer l'événement
         return;
       }
     }
@@ -150,7 +148,19 @@ export class TableRowView extends SignalWatcher(
     e.preventDefault();
     const ele = e.target as HTMLElement;
     const cell = ele.closest('affine-database-cell-container');
-    const row = { id: this.rowId, groupKey: this.groupKey };
+
+    let actualRowId = this.rowId;
+    let actualGroupKey = this.groupKey;
+
+    if (this.view.transpose$.value && this.property && cell) {
+      actualRowId = cell.dataset.rowId || '';
+    }
+
+    if (!actualRowId) {
+      return;
+    }
+
+    const row = { id: actualRowId, groupKey: actualGroupKey };
     if (!TableViewRowSelection.includes(selection.selection, row)) {
       selection.selection = TableViewRowSelection.create({
         rows: [row],
@@ -186,7 +196,6 @@ export class TableRowView extends SignalWatcher(
   }
 
   protected override render(): unknown {
-    // Mode transposé : on ne rend rien ici, le parent gère tout le layout
     if (this.property) {
       return nothing;
     }
@@ -310,7 +319,6 @@ export class TableRowView extends SignalWatcher(
   @property({ attribute: false })
   accessor view!: TableSingleView;
 
-  // Ajout pour mode transposé
   @property({ attribute: false })
   accessor property: unknown = undefined;
   @property({ attribute: false })
