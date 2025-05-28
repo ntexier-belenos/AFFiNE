@@ -344,9 +344,6 @@ export class MobileTableGroup extends SignalWatcher(
               </div>
             `}
       </div>
-
-      <affine-database-column-stats .view="${this.view}" .group="${this.group}">
-      </affine-database-column-stats>
     `;
   }
 
