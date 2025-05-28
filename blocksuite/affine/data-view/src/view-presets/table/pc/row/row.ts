@@ -136,6 +136,17 @@ export class TableRowView extends SignalWatcher(
     if (!selection) {
       return;
     }
+
+    // En mode transposé, ignorer les clics sur l'en-tête de propriété
+    if (this.view.transpose$.value && this.property) {
+      const ele = e.target as HTMLElement;
+      const headerColumn = ele.closest('affine-database-header-column');
+      if (headerColumn) {
+        // Le clic provient de l'en-tête de propriété, laisser son gestionnaire gérer l'événement
+        return;
+      }
+    }
+
     e.preventDefault();
     const ele = e.target as HTMLElement;
     const cell = ele.closest('affine-database-cell-container');
