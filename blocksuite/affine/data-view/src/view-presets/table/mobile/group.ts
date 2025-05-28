@@ -187,6 +187,15 @@ export class MobileTableGroup extends SignalWatcher(
     const properties = this.view.properties$.value;
 
     return html`
+      <!-- Transposed header border to match classic view aesthetic -->
+      <div
+        style="border-top: 1px solid ${unsafeCSS(
+          cssVarV2.layer.insideBorder.border
+        )}; border-bottom: 1px solid ${unsafeCSS(
+          cssVarV2.layer.insideBorder.border
+        )}; background-color: var(--affine-background-primary-color); height: 1px;"
+      ></div>
+
       <!-- Transposed body: each property becomes a row -->
       <div class="mobile-affine-table-body">
         <!-- First row: Data row headers with "New record" at the end -->
@@ -196,6 +205,7 @@ export class MobileTableGroup extends SignalWatcher(
             class="mobile-table-cell"
             style="width: 120px; min-width: 120px;"
           ></div>
+          <div class="cell-divider"></div>
 
           <!-- Row headers (original record titles) -->
           ${repeat(
@@ -224,6 +234,7 @@ export class MobileTableGroup extends SignalWatcher(
                     data-column-index="0"
                   ></mobile-table-cell>
                 </div>
+                <div class="cell-divider"></div>
               `;
             }
           )}
@@ -245,6 +256,7 @@ export class MobileTableGroup extends SignalWatcher(
                     ${PlusIcon()}<span style="font-size: 10px">New Record</span>
                   </div>
                 </div>
+                <div class="cell-divider"></div>
               `}
         </div>
 
@@ -261,7 +273,8 @@ export class MobileTableGroup extends SignalWatcher(
               <!-- Property header as first cell -->
               <div
                 class="mobile-table-cell"
-                style="width: 120px; min-width: 120px;"
+                style="width: 120px; min-width: 120px; border-right: 1px solid ${cssVarV2
+                  .layer.insideBorder.border};"
               >
                 <mobile-table-column-header
                   .column="${property}"
@@ -270,30 +283,37 @@ export class MobileTableGroup extends SignalWatcher(
                   data-column-index="${propertyIdx}"
                 ></mobile-table-column-header>
               </div>
-
               <!-- Data cells for each original row (now displayed as columns) -->
               ${repeat(
                 rows,
                 row => row.rowId,
-                (row, rowIdx) => html`
-                  <div
-                    class="mobile-table-cell"
-                    style="width: 100px; min-width: 100px;"
-                  >
-                    <mobile-table-cell
-                      .view="${this.view}"
-                      .column="${property}"
-                      .rowId="${row.rowId}"
-                      data-row-id="${row.rowId}"
-                      .rowIndex="${rowIdx}"
-                      data-row-index="${rowIdx}"
-                      .columnId="${property.id}"
-                      data-column-id="${property.id}"
-                      .columnIndex="${propertyIdx}"
-                      data-column-index="${propertyIdx}"
-                    ></mobile-table-cell>
-                  </div>
-                `
+                (row, rowIdx) => {
+                  // Only add border-right if not last column
+                  const isLast =
+                    rowIdx === rows.length - 1 &&
+                    (!this.view.readonly$.value ? false : true);
+                  return html`
+                    <div
+                      class="mobile-table-cell"
+                      style="width: 100px; min-width: 100px;${!isLast
+                        ? ` border-right: 1px solid ${cssVarV2.layer.insideBorder.border};`
+                        : ''}"
+                    >
+                      <mobile-table-cell
+                        .view="${this.view}"
+                        .column="${property}"
+                        .rowId="${row.rowId}"
+                        data-row-id="${row.rowId}"
+                        .rowIndex="${rowIdx}"
+                        data-row-index="${rowIdx}"
+                        .columnId="${property.id}"
+                        data-column-id="${property.id}"
+                        .columnIndex="${propertyIdx}"
+                        data-column-index="${propertyIdx}"
+                      ></mobile-table-cell>
+                    </div>
+                  `;
+                }
               )}
             </div>
           `
@@ -320,6 +340,7 @@ export class MobileTableGroup extends SignalWatcher(
                     >
                   </div>
                 </div>
+                <div class="cell-divider"></div>
               </div>
             `}
       </div>

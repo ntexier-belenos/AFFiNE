@@ -295,6 +295,15 @@ export class TableGroup extends SignalWatcher(
     const properties = this.view.properties$.value;
 
     return html`
+      <!-- Transposed header border to match classic view aesthetic -->
+      <div
+        style="border-top: 1px solid ${unsafeCSS(
+          cssVarV2.layer.insideBorder.border
+        )}; border-bottom: 1px solid ${unsafeCSS(
+          cssVarV2.layer.insideBorder.border
+        )}; background-color: var(--affine-background-primary-color); height: 1px;"
+      ></div>
+
       <!-- Transposed body: each property becomes a row -->
       <div class="affine-database-block-rows">
         <!-- Property rows: each property becomes a row -->
@@ -319,7 +328,9 @@ export class TableGroup extends SignalWatcher(
               <div
                 class="database-cell affine-database-column"
                 style="width: ${properties[0]?.width$.value ||
-                150}px; min-width: ${properties[0]?.width$.value || 150}px;"
+                150}px; min-width: ${properties[0]?.width$.value ||
+                150}px; border-right: 1px solid ${cssVarV2.layer.insideBorder
+                  .border};"
               >
                 <affine-database-header-column
                   .column="${property}"
@@ -328,45 +339,46 @@ export class TableGroup extends SignalWatcher(
                   data-column-index="${propertyIdx}"
                 ></affine-database-header-column>
               </div>
-              <div class="cell-divider"></div>
               <!-- Data cells for each original row (now displayed as columns) -->
-              ${repeat(
-                rows,
-                row => row.rowId,
-                (row, rowIdx) => {
-                  const titleProperty = properties.find(
-                    p => p.type$.value === 'title'
-                  );
-                  const columnWidth = titleProperty?.width$.value || 150;
-                  return html`
-                    <div
-                      class="database-cell"
-                      style="width: ${columnWidth}px; min-width: ${columnWidth}px;"
-                    >
-                      <affine-database-cell-container
-                        .view="${this.view}"
-                        .column="${property}"
-                        .rowId="${row.rowId}"
-                        data-row-id="${row.rowId}"
-                        .rowIndex="${rowIdx}"
-                        data-row-index="${rowIdx}"
-                        .columnId="${property.id}"
-                        data-column-id="${property.id}"
-                        .columnIndex="${propertyIdx}"
-                        data-column-index="${propertyIdx}"
-                        .readonly="${false}"
-                      ></affine-database-cell-container>
-                    </div>
-                    <div class="cell-divider"></div>
-                  `;
-                }
-              )}
+              ${repeat(rows, (row, rowIdx) => {
+                const titleProperty = properties.find(
+                  p => p.type$.value === 'title'
+                );
+                const columnWidth = titleProperty?.width$.value || 150;
+                // Only add border-right if not last column
+                const isLast =
+                  rowIdx === rows.length - 1 &&
+                  (!this.view.readonly$.value ? false : true);
+                return html`
+                  <div
+                    class="database-cell"
+                    style="width: ${columnWidth}px; min-width: ${columnWidth}px;${!isLast
+                      ? ` border-right: 1px solid ${cssVarV2.layer.insideBorder.border};`
+                      : ''}"
+                  >
+                    <affine-database-cell-container
+                      .view="${this.view}"
+                      .column="${property}"
+                      .rowId="${row.rowId}"
+                      data-row-id="${row.rowId}"
+                      .rowIndex="${rowIdx}"
+                      data-row-index="${rowIdx}"
+                      .columnId="${property.id}"
+                      data-column-id="${property.id}"
+                      .columnIndex="${propertyIdx}"
+                      data-column-index="${propertyIdx}"
+                      .readonly="${false}"
+                    ></affine-database-cell-container>
+                  </div>
+                `;
+              })}
               <!-- New Record button column - only on first property row -->
               ${!this.view.readonly$.value && propertyIdx === 0
                 ? html`
                     <div
                       class="database-cell"
-                      style="width: 150px; min-width: 150px;"
+                      style="width: 150px; min-width: 150px; border-right: 1px solid ${cssVarV2
+                        .layer.insideBorder.border};"
                     >
                       <div
                         class="data-view-table-group-add-row-button dv-icon-16"
@@ -379,7 +391,6 @@ export class TableGroup extends SignalWatcher(
                         >
                       </div>
                     </div>
-                    <div class="cell-divider"></div>
                   `
                 : nothing}
             </data-view-table-row>
