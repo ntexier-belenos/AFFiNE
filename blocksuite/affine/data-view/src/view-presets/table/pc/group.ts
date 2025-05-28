@@ -21,8 +21,10 @@ import { defaultActivators } from '../../../core/utils/wc-dnd/sensors/index.js';
 import { linearMove } from '../../../core/utils/wc-dnd/utils/linear-move.js';
 import { LEFT_TOOL_BAR_WIDTH } from '../consts.js';
 import { TableViewAreaSelection } from '../selection';
-import type { TableSingleView } from '../table-view-manager.js';
+import type { TableProperty, TableSingleView } from '../table-view-manager.js';
 import { DataViewColumnPreview } from './header/column-renderer.js';
+import { getHorizontalIndicator } from './header/horizontal-indicator.js';
+import { DataViewRowPreview } from './header/row-renderer.js';
 import { getVerticalIndicator } from './header/vertical-indicator.js';
 import type { DataViewTable } from './table-view.js';
 
@@ -157,85 +159,50 @@ export class TableGroup extends SignalWatcher(
   @property({ attribute: false })
   accessor view!: TableSingleView;
 
-  dndContext = createDndContext({
-    activators: defaultActivators,
-    container: this,
-    modifiers: [
-      ({ transform }) => {
-        return {
-          ...transform,
-          y: 0,
-        };
-      },
-    ],
-    onDragEnd: ({ over, active }) => {
-      if (over && over.id !== active.id) {
-        const activeIndex = this.view.properties$.value.findIndex(
-          data => data.id === active.id
-        );
-        const overIndex = this.view.properties$.value.findIndex(
-          data => data.id === over.id
-        );
-        this.view.propertyGetOrCreate(active.id).move({
-          before: activeIndex > overIndex,
-          id: over.id,
-        });
-      }
-    },
-    collisionDetection: linearMove(true),
-    createOverlay: active => {
-      const column = this.view.propertyGetOrCreate(active.id);
-      const preview = new DataViewColumnPreview();
-      preview.column = column;
-      preview.group = this.group;
-      preview.container = this;
-      preview.style.position = 'absolute';
-      preview.style.zIndex = '999';
-      const scale = this.dndContext.scale$.value;
-      const offsetParentRect = this.offsetParent?.getBoundingClientRect();
-      if (!offsetParentRect) {
-        return;
-      }
-      preview.style.width = `${column.width$.value}px`;
-      preview.style.top = `${(active.rect.top - offsetParentRect.top - 1) / scale.y}px`;
-      preview.style.left = `${(active.rect.left - offsetParentRect.left) / scale.x}px`;
-      const cells = Array.from(
-        this.querySelectorAll(`[data-column-id="${active.id}"]`)
-      ) as HTMLElement[];
-      cells.forEach(ele => {
-        ele.style.opacity = '0.1';
-      });
-      this.append(preview);
-      return {
-        overlay: preview,
-        cleanup: () => {
-          preview.remove();
-          cells.forEach(ele => {
-            ele.style.opacity = '1';
-          });
-        },
-      };
-    },
-  });
+  dndContext?: ReturnType<typeof createDndContext>;
 
   showIndicator = () => {
-    const columnMoveIndicator = getVerticalIndicator();
+    if (!this.dndContext) {
+      return; // DnD context not initialized yet
+    }
+
+    // Use appropriate indicator based on transpose mode
+    const indicator = this.view.transpose$.value
+      ? getHorizontalIndicator()
+      : getVerticalIndicator();
+
     this.disposables.add(
       effect(() => {
+        if (!this.dndContext) return;
+
         const active = this.dndContext.active$.value;
         const over = this.dndContext.over$.value;
         if (!active || !over) {
-          columnMoveIndicator.remove();
+          indicator.remove();
           return;
         }
-        const scrollX = this.dndContext.scrollOffset$.value.x;
-        const bottom =
-          this.rowsContainer?.getBoundingClientRect().bottom ??
-          this.getBoundingClientRect().bottom;
-        const left =
-          over.rect.left < active.rect.left ? over.rect.left : over.rect.right;
-        const height = bottom - over.rect.top;
-        columnMoveIndicator.display(left - scrollX, over.rect.top, height);
+
+        if (this.view.transpose$.value) {
+          // Transpose mode: horizontal indicator between property rows
+          const scrollY = this.dndContext.scrollOffset$.value.y;
+          const containerRect = this.getBoundingClientRect();
+          const top =
+            over.rect.top < active.rect.top ? over.rect.top : over.rect.bottom;
+          const width = containerRect.width;
+          indicator.display(containerRect.left, top - scrollY, width, 2, true);
+        } else {
+          // Normal mode: vertical indicator between columns
+          const scrollX = this.dndContext.scrollOffset$.value.x;
+          const bottom =
+            this.rowsContainer?.getBoundingClientRect().bottom ??
+            this.getBoundingClientRect().bottom;
+          const left =
+            over.rect.left < active.rect.left
+              ? over.rect.left
+              : over.rect.right;
+          const height = bottom - over.rect.top;
+          indicator.display(left - scrollX, over.rect.top, height, 1, true);
+        }
       })
     );
   };
@@ -450,9 +417,146 @@ export class TableGroup extends SignalWatcher(
     });
   };
 
+  private createColumnPreview(active: any, column: TableProperty) {
+    const preview = new DataViewColumnPreview();
+    preview.column = column;
+    preview.group = this.group;
+    preview.container = this;
+    preview.style.position = 'absolute';
+    preview.style.zIndex = '999';
+    const scale = this.dndContext.scale$.value;
+    const offsetParentRect = this.offsetParent?.getBoundingClientRect();
+    if (!offsetParentRect) {
+      return;
+    }
+    preview.style.width = `${column.width$.value}px`;
+    preview.style.top = `${(active.rect.top - offsetParentRect.top - 1) / scale.y}px`;
+    preview.style.left = `${(active.rect.left - offsetParentRect.left) / scale.x}px`;
+    const cells = Array.from(
+      this.querySelectorAll(`[data-column-id="${active.id}"]`)
+    ) as HTMLElement[];
+    cells.forEach(ele => {
+      ele.style.opacity = '0.1';
+    });
+    this.append(preview);
+    return {
+      overlay: preview,
+      cleanup: () => {
+        preview.remove();
+        cells.forEach(ele => {
+          ele.style.opacity = '1';
+        });
+      },
+    };
+  }
+
+  private createTransposePreview(active: any, column: TableProperty) {
+    const preview = new DataViewRowPreview();
+    preview.column = column;
+    preview.group = this.group;
+    preview.view = this.view;
+    preview.container = this;
+    preview.style.position = 'absolute';
+    preview.style.zIndex = '999';
+
+    const scale = this.dndContext.scale$.value;
+    const offsetParentRect = this.offsetParent?.getBoundingClientRect();
+    if (!offsetParentRect) {
+      return;
+    }
+
+    // For transpose mode, the preview should span the full table width
+    // Get the container's full width to include all columns
+    const tableContainer = this.querySelector('.affine-database-block-rows');
+    const containerWidth = tableContainer?.scrollWidth || this.clientWidth;
+
+    // Position the preview to start at the beginning of the row (left: 0)
+    // and span the full width
+    preview.style.width = `${containerWidth}px`;
+    preview.style.height = `${active.rect.height}px`;
+    preview.style.top = `${(active.rect.top - offsetParentRect.top - 1) / scale.y}px`;
+    preview.style.left = '0px'; // Start at the beginning of the container
+
+    // Make original row semi-transparent
+    const propertyRow = this.querySelector(
+      `[data-property-id="${active.id}"]`
+    ) as HTMLElement;
+    if (propertyRow) {
+      propertyRow.style.opacity = '0.1';
+    }
+
+    this.append(preview);
+
+    return {
+      overlay: preview,
+      cleanup: () => {
+        preview.remove();
+        if (propertyRow) {
+          propertyRow.style.opacity = '1';
+        }
+      },
+    };
+  }
+
+  private initializeDndContext() {
+    if (!this.view || this.dndContext) {
+      return; // Already initialized or view not ready
+    }
+
+    this.dndContext = createDndContext({
+      activators: defaultActivators,
+      container: this,
+      modifiers: [
+        ({ transform }) => {
+          // Adapt movement direction based on transpose mode
+          const isTransposed = this.view.transpose$.value;
+          return {
+            ...transform,
+            // In transpose mode, allow vertical movement; in normal mode, horizontal only
+            y: isTransposed ? transform.y : 0,
+            x: isTransposed ? 0 : transform.x,
+          };
+        },
+      ],
+      onDragEnd: ({ over, active }) => {
+        if (over && over.id !== active.id) {
+          const activeIndex = this.view.properties$.value.findIndex(
+            data => data.id === active.id
+          );
+          const overIndex = this.view.properties$.value.findIndex(
+            data => data.id === over.id
+          );
+          this.view.propertyGetOrCreate(active.id).move({
+            before: activeIndex > overIndex,
+            id: over.id,
+          });
+        }
+      },
+      collisionDetection: linearMove(!this.view.transpose$.value), // horizontal for normal, vertical for transpose
+      createOverlay: active => {
+        const column = this.view.propertyGetOrCreate(active.id);
+        const preview = this.view.transpose$.value
+          ? this.createTransposePreview(active, column)
+          : this.createColumnPreview(active, column);
+        return preview;
+      },
+    });
+  }
+
   override connectedCallback(): void {
     super.connectedCallback();
     this.showIndicator();
+  }
+
+  override updated(changedProperties: Map<string, unknown>): void {
+    super.updated(changedProperties);
+
+    // Initialize DnD context when view becomes available
+    if (changedProperties.has('view') && this.view) {
+      this.initializeDndContext();
+      // Initialize indicator after DnD context is ready
+      this.showIndicator();
+    }
   }
 
   override render() {
