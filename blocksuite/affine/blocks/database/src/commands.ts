@@ -1,6 +1,7 @@
 import type { DatabaseBlockModel } from '@blocksuite/affine-model';
 import type { Command } from '@blocksuite/std';
 import type { BlockModel, Store } from '@blocksuite/store';
+import { nanoid } from '@blocksuite/store';
 
 import {
   DatabaseBlockDataSource,
@@ -16,6 +17,7 @@ export const insertDatabaseBlockCommand: Command<
   },
   {
     insertedDatabaseBlockId: string;
+    tableId: string;
   }
 > = (ctx, next) => {
   const { selectedModels, viewType, place, removeEmptyLine, std } = ctx;
@@ -28,22 +30,37 @@ export const insertDatabaseBlockCommand: Command<
 
   if (!targetModel) return;
 
+  // Generate unique table ID for workspace indexing
+  const tableId = nanoid();
+
   const result = std.store.addSiblingBlocks(
     targetModel,
-    [{ flavour: 'affine:database' }],
+    [
+      {
+        flavour: 'affine:database',
+        props: { tableId },
+      },
+    ],
     place
   );
-  const string = result[0];
+  const blockId = result[0];
 
-  if (string == null) return;
+  if (blockId == null) return;
 
-  initDatabaseBlock(std.store, targetModel, string, viewType, false);
+  // Initialize the database block
+  initDatabaseBlock(std.store, targetModel, blockId, viewType, false);
+
+  // Register table in workspace index
+  registerTableInWorkspace(std.store, blockId, tableId);
 
   if (removeEmptyLine && targetModel.text?.length === 0) {
     std.store.deleteBlock(targetModel);
   }
 
-  next({ insertedDatabaseBlockId: string });
+  next({
+    insertedDatabaseBlockId: blockId,
+    tableId,
+  });
 };
 
 export const initDatabaseBlock = (
@@ -67,3 +84,61 @@ export const initDatabaseBlock = (
     doc.addBlock('affine:paragraph', {}, parent.id);
   }
 };
+
+/**
+ * Register a newly created table in the workspace index
+ */
+function registerTableInWorkspace(
+  store: Store,
+  blockId: string,
+  tableId: string
+): void {
+  try {
+    // Get the page containing the block
+    const block = store.getBlock(blockId);
+    if (!block) {
+      console.warn(`Block ${blockId} not found for table registration`);
+      return;
+    }
+
+    const pageId = block.doc?.id;
+    if (!pageId) {
+      console.warn(`Page ID not found for block ${blockId}`);
+      return;
+    }
+
+    // Get workspace meta from store
+    const workspaceMeta = store.workspace?.meta;
+    if (!workspaceMeta) {
+      console.warn('Workspace meta not available for table registration');
+      return;
+    }
+
+    // Get table title from block model
+    const blockModel = block.model as DatabaseBlockModel;
+    const title = blockModel.props.title?.toString() || 'Untitled Table';
+
+    // Create table metadata
+    const now = Date.now();
+    const tableMeta = {
+      id: tableId,
+      title,
+      pageId,
+      blockId,
+      usageCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    // Register in workspace index
+    workspaceMeta.addTable(tableMeta);
+
+    console.log(`Table ${tableId} registered in workspace index`, {
+      title,
+      pageId,
+      blockId,
+    });
+  } catch (error) {
+    console.error('Failed to register table in workspace index:', error);
+  }
+}

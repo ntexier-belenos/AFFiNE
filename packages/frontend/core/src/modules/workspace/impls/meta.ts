@@ -2,6 +2,8 @@ import {
   createYProxy,
   type DocMeta,
   type DocsPropertiesMeta,
+  type TableMeta,
+  type TablesIndexMeta,
   type WorkspaceMeta,
 } from '@blocksuite/affine/store';
 import { Subject } from 'rxjs';
@@ -10,6 +12,7 @@ import type * as Y from 'yjs';
 type MetaState = {
   pages?: unknown[];
   properties?: DocsPropertiesMeta;
+  tables?: TablesIndexMeta;
   name?: string;
   avatar?: string;
 };
@@ -20,6 +23,9 @@ export class WorkspaceMetaImpl implements WorkspaceMeta {
   docMetaAdded = new Subject<string>();
   docMetaRemoved = new Subject<string>();
   docMetaUpdated = new Subject<void>();
+  tableAdded = new Subject<string>();
+  tableRemoved = new Subject<string>();
+  tableUpdated = new Subject<string>();
   /* eslint-enable rxjs/finnish */
 
   private readonly _handleDocCollectionMetaEvents = (
@@ -35,6 +41,10 @@ export class WorkspaceMetaImpl implements WorkspaceMeta {
         hasKey('pages')
       ) {
         this._handleDocMetaEvent();
+      }
+
+      if (hasKey('tables')) {
+        this._handleTableMetaEvent();
       }
 
       if (hasKey('name') || hasKey('avatar')) {
@@ -86,6 +96,72 @@ export class WorkspaceMetaImpl implements WorkspaceMeta {
     this.docMetaUpdated.next();
   }
 
+  get tables(): TablesIndexMeta {
+    const tables = this._proxy.tables;
+    if (!tables) {
+      return {};
+    }
+    return tables;
+  }
+
+  setTables(tables: TablesIndexMeta) {
+    this._proxy.tables = tables;
+    this._handleTableMetaEvent();
+  }
+
+  addTable(table: TableMeta) {
+    this._doc.transact(() => {
+      if (!this._proxy.tables) {
+        this._proxy.tables = {};
+      }
+      this._proxy.tables[table.id] = table;
+    }, this._doc.clientID);
+    this.tableAdded.next(table.id);
+  }
+
+  getTable(tableId: string): TableMeta | undefined {
+    return this.tables[tableId];
+  }
+
+  updateTable(tableId: string, updates: Partial<TableMeta>) {
+    const table = this.getTable(tableId);
+    if (!table) {
+      return;
+    }
+
+    this._doc.transact(() => {
+      if (!this._proxy.tables) {
+        return;
+      }
+      this._proxy.tables[tableId] = { ...table, ...updates };
+    }, this._doc.clientID);
+    this.tableUpdated.next(tableId);
+  }
+
+  removeTable(tableId: string) {
+    this._doc.transact(() => {
+      if (!this._proxy.tables) {
+        return;
+      }
+      delete this._proxy.tables[tableId];
+    }, this._doc.clientID);
+    this.tableRemoved.next(tableId);
+  }
+
+  incrementTableUsage(tableId: string) {
+    const table = this.getTable(tableId);
+    if (table) {
+      this.updateTable(tableId, { usageCount: table.usageCount + 1 });
+    }
+  }
+
+  decrementTableUsage(tableId: string) {
+    const table = this.getTable(tableId);
+    if (table && table.usageCount > 0) {
+      this.updateTable(tableId, { usageCount: table.usageCount - 1 });
+    }
+  }
+
   get docMetas() {
     if (!this._proxy.pages) {
       return [] as DocMeta[];
@@ -111,6 +187,11 @@ export class WorkspaceMetaImpl implements WorkspaceMeta {
 
   private _handleCommonFieldsEvent() {
     this.commonFieldsUpdated.next();
+  }
+
+  private _handleTableMetaEvent() {
+    // Could add specific table event handling logic here if needed
+    // For now, we handle table events individually in the methods
   }
 
   private _handleDocMetaEvent() {
@@ -158,6 +239,9 @@ export class WorkspaceMetaImpl implements WorkspaceMeta {
   initialize() {
     if (!this._proxy.pages) {
       this._proxy.pages = [];
+    }
+    if (!this._proxy.tables) {
+      this._proxy.tables = {};
     }
   }
 

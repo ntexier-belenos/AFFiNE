@@ -7,10 +7,6 @@ import { numberPropertyModelConfig } from './number/define.js';
 import { progressPropertyModelConfig } from './progress/define.js';
 import { selectPropertyModelConfig } from './select/define.js';
 import { textPropertyModelConfig } from './text/define.js';
-import {
-  numberToIdConverter,
-  textToIdConverter,
-} from './types-to-id-converter.js';
 
 // Define the interface for type conversion functions
 export interface ConvertFunctionParams<P = any, C = any> {
@@ -55,14 +51,24 @@ export const presetPropertyConverts = [
     })
   ),
   // Add converters for ID property type
-  createPropertyConvert(
-    textPropertyModelConfig,
-    idPropertyModelConfig,
-    textToIdConverter
-  ),
+  createPropertyConvert(textPropertyModelConfig, idPropertyModelConfig, () => ({
+    property: {
+      prefix: undefined,
+      suffix: undefined,
+      padding: 0,
+    },
+    cells: [],
+  })),
   createPropertyConvert(
     numberPropertyModelConfig,
     idPropertyModelConfig,
-    numberToIdConverter
+    () => ({
+      property: {
+        prefix: undefined,
+        suffix: undefined,
+        padding: 0,
+      },
+      cells: [],
+    })
   ),
 ];

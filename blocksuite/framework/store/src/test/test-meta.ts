@@ -4,6 +4,8 @@ import type * as Y from 'yjs';
 import type {
   DocMeta,
   DocsPropertiesMeta,
+  TableMeta,
+  TablesIndexMeta,
   WorkspaceMeta,
 } from '../extension/index.js';
 import { createYProxy } from '../reactive/proxy.js';
@@ -50,6 +52,43 @@ export class TestMeta implements WorkspaceMeta {
   docMetaUpdated = new Subject<void>();
 
   readonly id: string = 'meta';
+
+  // Ajout des propriétés manquantes pour respecter WorkspaceMeta
+  tables: TablesIndexMeta = {};
+  tableAdded = new Subject<string>();
+  tableRemoved = new Subject<string>();
+  tableUpdated = new Subject<string>();
+
+  setTables = (tables: TablesIndexMeta) => {
+    this.tables = tables;
+  };
+  addTable = (table: TableMeta) => {
+    this.tables[table.id] = table;
+    this.tableAdded.next(table.id);
+  };
+  getTable = (tableId: string) => {
+    return this.tables[tableId];
+  };
+  updateTable = (tableId: string, updates: Partial<TableMeta>) => {
+    const table = this.tables[tableId];
+    if (!table) return;
+    const updatedTable = { ...table, ...updates };
+    this.tables[tableId] = updatedTable;
+    this.tableUpdated.next(tableId);
+  };
+  removeTable = (tableId: string) => {
+    const table = this.tables[tableId];
+    if (table) {
+      delete this.tables[tableId];
+      this.tableRemoved.next(tableId);
+    }
+  };
+  incrementTableUsage = (_name: string) => {
+    // Implémentation factice
+  };
+  decrementTableUsage = (_name: string) => {
+    // Implémentation factice
+  };
 
   get docMetas() {
     if (!this._proxy.pages) {

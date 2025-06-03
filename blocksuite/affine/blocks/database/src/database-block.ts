@@ -104,6 +104,28 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
   `;
 
   private readonly _clickDatabaseOps = (e: MouseEvent) => {
+    // Récupération des bases de données existantes (hors celle en cours)
+    // Utilisation de getAllBlocksByFlavour si disponible, sinon fallback vide
+    let allDatabases: DatabaseBlockModel[] = [];
+    if (typeof (this.store as any).getAllBlocksByFlavour === 'function') {
+      allDatabases = (this.store as any).getAllBlocksByFlavour(
+        'affine:database'
+      ) as DatabaseBlockModel[];
+    }
+    // Traces pour debug
+    console.log('[DatabaseBlockComponent] Base courante:', {
+      id: this.model.id,
+      title: this.model.props.title?.toString(),
+    });
+    console.log(
+      '[DatabaseBlockComponent] Toutes les bases de données trouvées:',
+      allDatabases.map(db => ({
+        id: db.id,
+        title: db.props.title?.toString(),
+        isCurrent: db.id === this.model.id,
+      }))
+    );
+
     const options = this.optionsConfig.configure(this.model, {
       items: [
         menu.input({
@@ -115,6 +137,50 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
               this.model.props.title.length,
               text
             );
+          },
+        }),
+        // Ajout du sous-menu Source
+        menu.subMenu({
+          name: 'Source',
+          options: {
+            title: { text: 'Select database source' },
+            items: [
+              menu.action({
+                name: 'New database',
+                select: () => {
+                  console.log(
+                    '[DatabaseBlockComponent] Choix: Nouvelle base de données'
+                  );
+                  toast(this.host, 'Switched to new database mode');
+                },
+              }),
+              ...(allDatabases.length > 0
+                ? allDatabases.map(db =>
+                    menu.action({
+                      name: db.props.title?.toString() || db.id,
+                      isSelected: db.id === this.model.id,
+                      select: () => {
+                        console.log(
+                          '[DatabaseBlockComponent] Choix: Source',
+                          db.id,
+                          db.props.title?.toString(),
+                          db.id === this.model.id ? '(courante)' : ''
+                        );
+                        toast(
+                          this.host,
+                          `Switched to source: ${db.props.title?.toString() || db.id}`
+                        );
+                      },
+                    })
+                  )
+                : [
+                    menu.action({
+                      name: 'No database found',
+                      select: () => {},
+                      class: { 'disabled-item': true },
+                    }),
+                  ]),
+            ],
           },
         }),
         menu.action({

@@ -53,15 +53,15 @@ export class TableSelectionController implements ReactiveController {
   selectionStyleUpdateTask = 0;
 
   private get areaSelectionElement() {
-    return this.__selectionElement.selectionRef.value;
+    return this.__selectionElement?.selectionRef?.value ?? null;
   }
 
   get dragToFillDraggable() {
-    return this.__dragToFillElement.dragToFillRef.value;
+    return this.__dragToFillElement?.dragToFillRef?.value ?? null;
   }
 
   private get focusSelectionElement() {
-    return this.__selectionElement.focusRef.value;
+    return this.__selectionElement?.focusRef?.value ?? null;
   }
 
   get selection(): TableViewSelectionWithType | undefined {
@@ -452,20 +452,14 @@ export class TableSelectionController implements ReactiveController {
     columnIndex: number
   ): DatabaseCellContainer | null {
     if (this.view.transpose$.value) {
-      // In transpose mode, we need to swap coordinates:
-      // - Original rowIndex becomes columnIndex (property becomes row in transposed table)
-      // - Original columnIndex becomes rowIndex (record becomes column in transposed table)
-      // DOM structure: each property is a row with data-row-index="${propertyIdx + 1}"
-      // Each row has: [property-header] [cell-0] [cell-1] [cell-2] ...
-
       const rows = this.rows(groupKey);
+      if (!rows) return null;
 
       const row = rows.item(columnIndex); // columnIndex becomes row index (property)
       if (!row) {
         return null;
       }
 
-      // Get only the data cells, not the property header
       const dataCells = row.querySelectorAll<DatabaseCellContainer>(
         'affine-database-cell-container'
       );
@@ -481,8 +475,8 @@ export class TableSelectionController implements ReactiveController {
       return dataCells.item(rowIndex) ?? null; // rowIndex becomes column index (record)
     }
 
-    // Normal mode logic
     const rows = this.rows(groupKey);
+    if (!rows) return null;
 
     const row = rows.item(rowIndex);
     if (!row) {

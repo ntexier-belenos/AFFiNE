@@ -10,7 +10,12 @@ export type { WorkspaceFlavourProvider } from './providers/flavour';
 export { WorkspaceFlavoursProvider } from './providers/flavour';
 export { WorkspaceLocalCache, WorkspaceLocalState } from './providers/storage';
 export { WorkspaceScope } from './scopes/workspace';
+export { TableAccessService } from './services/table-access';
+export { TableIndexService } from './services/table-index';
+export { TableMigrationService } from './services/table-migration';
+export { TableObserverService } from './services/table-observer';
 export { WorkspaceService } from './services/workspace';
+export { WorkspaceTablesService } from './services/workspace-tables';
 export { WorkspacesService } from './services/workspaces';
 
 import type { Framework } from '@toeverything/infra';
@@ -34,8 +39,13 @@ import { WorkspaceFlavoursService } from './services/flavours';
 import { WorkspaceListService } from './services/list';
 import { WorkspaceProfileService } from './services/profile';
 import { WorkspaceRepositoryService } from './services/repo';
+import { TableAccessService } from './services/table-access';
+import { TableIndexService } from './services/table-index';
+import { TableMigrationService } from './services/table-migration';
+import { TableObserverService } from './services/table-observer';
 import { WorkspaceTransformService } from './services/transform';
 import { WorkspaceService } from './services/workspace';
+import { WorkspaceTablesService } from './services/workspace-tables';
 import { WorkspacesService } from './services/workspaces';
 import { WorkspaceProfileCacheStore } from './stores/profile-cache';
 
@@ -72,6 +82,15 @@ export function configureWorkspaceModule(framework: Framework) {
     ])
     .scope(WorkspaceScope)
     .service(WorkspaceService)
+    .service(TableIndexService, [WorkspaceService])
+    .service(TableObserverService, [WorkspaceService])
+    .service(TableAccessService, [TableIndexService])
+    .service(TableMigrationService, [WorkspaceService, TableIndexService])
+    .service(WorkspaceTablesService, [
+      WorkspaceService,
+      TableIndexService,
+      TableObserverService,
+    ])
     .entity(Workspace, [WorkspaceScope, FeatureFlagService])
     .service(WorkspaceEngineService, [WorkspaceScope])
     .entity(WorkspaceEngine, [WorkspaceService, NbstoreService])
