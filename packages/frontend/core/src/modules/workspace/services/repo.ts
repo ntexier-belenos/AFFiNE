@@ -10,6 +10,7 @@ import type { WorkspaceFlavoursService } from './flavours';
 import type { WorkspaceListService } from './list';
 import type { WorkspaceProfileService } from './profile';
 import { WorkspaceService } from './workspace';
+import { WorkspaceTablesInitializationService } from './workspace-tables-init';
 
 const logger = new DebugLogger('affine:workspace-repository');
 
@@ -89,6 +90,10 @@ export class WorkspaceRepositoryService extends Service {
     logger.info(
       `open workspace [${openOptions.metadata.flavour}] ${openOptions.metadata.id} `
     );
+    console.log(
+      '[WorkspaceRepository] Instantiating workspace with ID:',
+      openOptions.metadata.id
+    );
     const flavourProvider = this.flavoursService.flavours$.value.find(
       p => p.flavour === openOptions.metadata.flavour
     );
@@ -110,6 +115,18 @@ export class WorkspaceRepositoryService extends Service {
 
     workspace.engine.start();
 
+    console.log(
+      '[WorkspaceRepository] Starting workspace table initialization for workspace:',
+      workspace.id
+    );
+
+    // Ensure table initialization service is instantiated to activate its event handlers
+    workspaceScope.get(WorkspaceTablesInitializationService);
+    console.log(
+      '[WorkspaceRepository] WorkspaceTablesInitializationService instantiated'
+    );
+
+    console.log('[WorkspaceRepository] Emitting WorkspaceInitialized event');
     workspaceScope.emitEvent(WorkspaceInitialized, workspace);
 
     flavourProvider?.onWorkspaceInitialized?.(workspace);

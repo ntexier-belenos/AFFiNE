@@ -81,6 +81,28 @@ describe('TableIndexService', () => {
       expect(table?.usageCount).toBe(0);
     });
 
+    it('should allow setting initial usage count', () => {
+      const pageId = 'page-1';
+      const blockId = 'block-1';
+      const title = 'Test Table';
+      const initialUsageCount = 1;
+
+      const tableId = tableIndexService.registerTable(
+        pageId,
+        blockId,
+        title,
+        undefined,
+        initialUsageCount
+      );
+
+      const table = tableIndexService.getTable(tableId);
+      expect(table).toBeDefined();
+      expect(table?.usageCount).toBe(initialUsageCount);
+      expect(table?.title).toBe(title);
+      expect(table?.pageId).toBe(pageId);
+      expect(table?.blockId).toBe(blockId);
+    });
+
     it('should set created and updated timestamps', () => {
       const before = Date.now();
       const tableId = tableIndexService.registerTable(

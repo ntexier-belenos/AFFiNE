@@ -125,7 +125,7 @@ function registerTableInWorkspace(
       title,
       pageId,
       blockId,
-      usageCount: 0,
+      usageCount: 1, // Initial usage count of 1 for newly created tables (they have at least one view)
       createdAt: now,
       updatedAt: now,
     };

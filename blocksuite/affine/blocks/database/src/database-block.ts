@@ -45,6 +45,7 @@ import { Slice } from '@blocksuite/store';
 import { autoUpdate } from '@floating-ui/dom';
 import { computed, signal } from '@preact/signals-core';
 import { css, html, nothing, unsafeCSS } from 'lit';
+import { nanoid } from 'nanoid';
 
 import { popSideDetail } from './components/layout.js';
 import { DatabaseConfigExtension } from './config.js';
@@ -227,6 +228,14 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
 
   private readonly renderTitle = (dataViewMethod: DataViewInstance) => {
     const addRow = () => dataViewMethod.addRow?.('start');
+
+    // Logs pour diagnostiquer le rendu du titre
+    console.log('[DatabaseBlock] Rendering title for database:', {
+      blockId: this.model.id,
+      title: this.model.props.title?.toString(),
+      readonly: this.dataSource.readonly$.value,
+    });
+
     return html` <affine-database-title
       style="overflow: hidden"
       .titleText="${this.model.props.title}"
@@ -283,6 +292,18 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
 
   headerWidget: DataViewWidget = defineUniComponent(
     (props: DataViewWidgetProps) => {
+      const tableId = this.model.props?.tableId;
+
+      // Logs pour diagnostiquer l'affichage de l'ID de table
+      console.log('[DatabaseBlock] Rendering headerWidget for database:', {
+        blockId: this.model.id,
+        title: this.model.props.title?.toString(),
+        tableId: tableId,
+        hasTableId: !!tableId,
+        allProps: Object.keys(this.model.props || {}),
+        propsValues: this.model.props,
+      });
+
       return html`
         <div style="margin-bottom: 16px;display:flex;flex-direction: column">
           <div
@@ -472,6 +493,21 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
   override renderBlock() {
     const peekViewService = this.std.getOptional(PeekViewProvider);
     const telemetryService = this.std.getOptional(TelemetryProvider);
+
+    // Check and migrate this block if needed
+    this.checkAndMigrateBlock();
+
+    // Ensure table is registered in workspace index on every render
+    this.ensureTableRegistered();
+
+    // Logs pour diagnostiquer le rendu du bloc de base de données
+    console.log('[DatabaseBlock] Rendering database block:', {
+      blockId: this.model.id,
+      title: this.model.props.title?.toString(),
+      tableId: this.model.props?.tableId,
+      hasHeaderWidget: !!this.headerWidget,
+    });
+
     return html`
       <div
         contenteditable="false"
@@ -549,6 +585,105 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
         })}
       </div>
     `;
+  }
+
+  /**
+   * Check and migrate this specific database block if needed
+   */
+  private checkAndMigrateBlock() {
+    const currentTableId = this.model.props?.tableId;
+
+    if (!currentTableId) {
+      console.log(
+        '[DatabaseBlock] Block needs migration, generating tableId...',
+        {
+          blockId: this.model.id,
+          title: this.model.props.title?.toString(),
+        }
+      );
+
+      // Generate new tableId
+      const tableId = nanoid();
+
+      // Update the block with tableId using store transaction
+      this.store.transact(() => {
+        this.model.props.tableId = tableId;
+      });
+
+      console.log('[DatabaseBlock] Block migrated with tableId:', {
+        blockId: this.model.id,
+        tableId: tableId,
+        title: this.model.props.title?.toString(),
+      });
+
+      // Emit a custom event that the workspace services can listen to
+      // This allows the table to be registered in the workspace index
+      this.dispatchEvent(
+        new CustomEvent('database-migrated', {
+          detail: {
+            pageId: this.store.id,
+            blockId: this.model.id,
+            tableId: tableId,
+            title: this.model.props.title?.toString() || 'Untitled Table',
+          },
+          bubbles: true,
+        })
+      );
+    } else {
+      console.log('[DatabaseBlock] Block already has tableId:', {
+        blockId: this.model.id,
+        tableId: currentTableId,
+        title: this.model.props.title?.toString(),
+      });
+
+      // Also emit event for existing tables to ensure they're registered
+      this.dispatchEvent(
+        new CustomEvent('database-ready', {
+          detail: {
+            pageId: this.store.id,
+            blockId: this.model.id,
+            tableId: currentTableId,
+            title: this.model.props.title?.toString() || 'Untitled Table',
+          },
+          bubbles: true,
+        })
+      );
+    }
+  }
+
+  /**
+   * Ensures that this table is registered in the workspace index.
+   * This method is called on every render to guarantee that tables
+   * with tableIds are always present in the workspace index, regardless
+   * of how/when the tableId was generated.
+   */
+  private ensureTableRegistered() {
+    const tableId = this.model.props?.tableId;
+    if (!tableId) {
+      // No tableId yet, nothing to register
+      return;
+    }
+
+    // Emit an event to request registration check
+    // The workspace services will check if this table is already indexed
+    // and register it if missing
+    this.dispatchEvent(
+      new CustomEvent('database-ensure-indexed', {
+        detail: {
+          pageId: this.store.id,
+          blockId: this.model.id,
+          tableId: tableId,
+          title: this.model.props.title?.toString() || 'Untitled Table',
+        },
+        bubbles: true,
+      })
+    );
+
+    console.log('[DatabaseBlock] Requested table registration check:', {
+      blockId: this.model.id,
+      tableId: tableId,
+      title: this.model.props.title?.toString(),
+    });
   }
 
   override accessor useZeroWidth = true;

@@ -7,6 +7,7 @@ import { ServerDeploymentType } from '@affine/graphql';
 import { useI18n } from '@affine/i18n';
 import {
   CollaborationIcon,
+  DatabaseTableViewIcon,
   IntegrationsIcon,
   PaymentIcon,
   PropertyIcon,
@@ -18,6 +19,7 @@ import { useMemo } from 'react';
 
 import type { SettingSidebarItem, SettingState } from '../types';
 import { WorkspaceSettingBilling } from './billing';
+import { WorkspaceSettingDatabases } from './databases';
 import { IntegrationSetting } from './integration';
 import { WorkspaceSettingLicense } from './license';
 import { MembersPanel } from './members';
@@ -39,6 +41,8 @@ export const WorkspaceSetting = ({
       return <WorkspaceSettingDetail onCloseSetting={onCloseSetting} />;
     case 'workspace:properties':
       return <WorkspaceSettingProperties />;
+    case 'workspace:databases':
+      return <WorkspaceSettingDatabases />;
     case 'workspace:members':
       return (
         <MembersPanel
@@ -90,6 +94,12 @@ export const useWorkspaceSettingList = (): SettingSidebarItem[] => {
         title: t['com.affine.settings.workspace.properties'](),
         icon: <PropertyIcon />,
         testId: 'workspace-setting:properties',
+      },
+      {
+        key: 'workspace:databases',
+        title: t['com.affine.settings.workspace.databases'](),
+        icon: <DatabaseTableViewIcon />,
+        testId: 'workspace-setting:databases',
       },
       {
         key: 'workspace:members',

@@ -16,6 +16,7 @@ export { TableMigrationService } from './services/table-migration';
 export { TableObserverService } from './services/table-observer';
 export { WorkspaceService } from './services/workspace';
 export { WorkspaceTablesService } from './services/workspace-tables';
+export { WorkspaceTablesInitializationService } from './services/workspace-tables-init';
 export { WorkspacesService } from './services/workspaces';
 
 import type { Framework } from '@toeverything/infra';
@@ -46,6 +47,7 @@ import { TableObserverService } from './services/table-observer';
 import { WorkspaceTransformService } from './services/transform';
 import { WorkspaceService } from './services/workspace';
 import { WorkspaceTablesService } from './services/workspace-tables';
+import { WorkspaceTablesInitializationService } from './services/workspace-tables-init';
 import { WorkspacesService } from './services/workspaces';
 import { WorkspaceProfileCacheStore } from './stores/profile-cache';
 
@@ -90,6 +92,11 @@ export function configureWorkspaceModule(framework: Framework) {
       WorkspaceService,
       TableIndexService,
       TableObserverService,
+    ])
+    .service(WorkspaceTablesInitializationService, [
+      TableMigrationService,
+      WorkspaceTablesService,
+      TableIndexService,
     ])
     .entity(Workspace, [WorkspaceScope, FeatureFlagService])
     .service(WorkspaceEngineService, [WorkspaceScope])

@@ -28,16 +28,22 @@ export class TableIndexService extends Service {
   /**
    * Register a new table in the workspace index
    */
-  registerTable(pageId: string, blockId: string, title: string): string {
-    const tableId = nanoid();
+  registerTable(
+    pageId: string,
+    blockId: string,
+    title: string,
+    tableId?: string,
+    initialUsageCount: number = 0
+  ): string {
+    const finalTableId = tableId || nanoid();
     const now = Date.now();
 
     const tableMeta: TableMeta = {
-      id: tableId,
+      id: finalTableId,
       title,
       pageId,
       blockId,
-      usageCount: 0,
+      usageCount: initialUsageCount,
       createdAt: now,
       updatedAt: now,
     };
@@ -45,7 +51,7 @@ export class TableIndexService extends Service {
     const meta = this.getWorkspaceMeta();
     meta.addTable(tableMeta);
 
-    return tableId;
+    return finalTableId;
   }
 
   /**
@@ -132,6 +138,35 @@ export class TableIndexService extends Service {
    */
   getTablesInUse(): TableMeta[] {
     return this.getAllTables().filter(table => table.usageCount > 0);
+  }
+
+  /**
+   * Reset all tables in the workspace index
+   * WARNING: This will clear all registered tables. Use with caution.
+   */
+  resetAllTables(): void {
+    const meta = this.getWorkspaceMeta();
+
+    // Get all current tables to trigger removal events
+    const currentTables = Object.values(meta.tables);
+
+    // Trigger removal events for each table individually
+    currentTables.forEach(table => {
+      meta.removeTable(table.id);
+    });
+
+    console.log('Table index has been reset - all tables cleared');
+  }
+
+  /**
+   * Get workspace meta for external observation
+   */
+  getWorkspaceMetaForObservation(): WorkspaceMeta | null {
+    try {
+      return this.getWorkspaceMeta();
+    } catch {
+      return null;
+    }
   }
 
   /**

@@ -103,4 +103,12 @@ export class TableAccessService extends Service {
       averageUsageCount: Math.round(averageUsageCount * 100) / 100,
     };
   }
+
+  /**
+   * Reset all tables in the workspace index
+   * WARNING: This will clear all registered tables. Use with caution.
+   */
+  resetAllTables(): void {
+    this.tableIndexService.resetAllTables();
+  }
 }

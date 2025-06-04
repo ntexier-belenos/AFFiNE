@@ -330,4 +330,52 @@ describe('TableIndexService', () => {
       expect(found).toBeUndefined();
     });
   });
+
+  describe('resetAllTables', () => {
+    it('should clear all tables from the workspace index', () => {
+      // Register some tables
+      const tableId1 = tableIndexService.registerTable(
+        'page-1',
+        'block-1',
+        'Table 1'
+      );
+      const tableId2 = tableIndexService.registerTable(
+        'page-2',
+        'block-2',
+        'Table 2'
+      );
+
+      // Verify tables exist
+      expect(tableIndexService.getAllTables()).toHaveLength(2);
+      expect(tableIndexService.getTable(tableId1)).toBeDefined();
+      expect(tableIndexService.getTable(tableId2)).toBeDefined();
+
+      // Reset all tables
+      tableIndexService.resetAllTables();
+
+      // Verify all tables are cleared
+      expect(tableIndexService.getAllTables()).toHaveLength(0);
+      expect(tableIndexService.getTable(tableId1)).toBeUndefined();
+      expect(tableIndexService.getTable(tableId2)).toBeUndefined();
+    });
+
+    it('should not throw error when called on empty index', () => {
+      expect(() => {
+        tableIndexService.resetAllTables();
+      }).not.toThrow();
+
+      expect(tableIndexService.getAllTables()).toHaveLength(0);
+    });
+
+    it('should call setTables with empty object', () => {
+      // Register a table first
+      tableIndexService.registerTable('page-1', 'block-1', 'Test Table');
+
+      // Reset all tables
+      tableIndexService.resetAllTables();
+
+      // Verify setTables was called with empty object
+      expect(mockWorkspaceMeta.setTables).toHaveBeenCalledWith({});
+    });
+  });
 });
