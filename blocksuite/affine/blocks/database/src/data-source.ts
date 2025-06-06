@@ -60,6 +60,13 @@ type SpacialProperty = {
 };
 
 export class DatabaseBlockDataSource extends DataSourceBase {
+  // Unique identifier that changes when the data source is recreated
+  // This helps with change detection in UI components
+  public readonly instanceId: string = `ds-${Date.now()}-${Math.random()}`;
+
+  // Counter for refresh operations to force view recreation
+  public readonly refreshCounter: number;
+
   override get parentProvider() {
     return this._model.store.provider;
   }
@@ -201,11 +208,17 @@ export class DatabaseBlockDataSource extends DataSourceBase {
 
   constructor(
     model: DatabaseBlockModel,
-    init?: (dataSource: DatabaseBlockDataSource) => void
+    init?: (dataSource: DatabaseBlockDataSource) => void,
+    refreshCounter?: number
   ) {
     super();
     this._model = model; // ensure invariants first
+    this.refreshCounter = refreshCounter ?? 0;
     init?.(this); // then allow external initialisation
+  }
+
+  get model(): DatabaseBlockModel {
+    return this._model;
   }
 
   private _runCapture() {
@@ -537,10 +550,8 @@ export class DatabaseBlockDataSource extends DataSourceBase {
       }
     });
     updateCells(this._model, propertyId, cells);
-    // Si on passe sur le type ID, on force la numérotation de tous les éléments
     if (toType === 'id') {
       try {
-        // Import statique pour garantir l'exécution
         const currentView = this.viewManager.currentView$.value;
         if (currentView) {
           const property = currentView.propertyGetOrCreate(propertyId);

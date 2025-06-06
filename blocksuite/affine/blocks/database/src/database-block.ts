@@ -45,6 +45,7 @@ import { Slice } from '@blocksuite/store';
 import { autoUpdate } from '@floating-ui/dom';
 import { computed, signal } from '@preact/signals-core';
 import { css, html, nothing, unsafeCSS } from 'lit';
+import { keyed } from 'lit/directives/keyed.js';
 import { nanoid } from 'nanoid';
 
 import { popSideDetail } from './components/layout.js';
@@ -107,12 +108,6 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
   private readonly _clickDatabaseOps = (e: MouseEvent) => {
     const currentSource = this._getCurrentSourceInfo();
     const availableTables = this._getAvailableTablesFromWorkspace();
-
-    console.log('[DatabaseBlockComponent] Current source:', currentSource);
-    console.log(
-      '[DatabaseBlockComponent] Available tables from workspace:',
-      availableTables
-    );
 
     const options = this.optionsConfig.configure(this.model, {
       items: [
@@ -191,25 +186,19 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
 
   private _dataSource?: DatabaseBlockDataSource;
 
+  private _dataSourceRefreshCounter = 0;
+
   private readonly dataView = new DataView();
 
   private readonly renderTitle = (dataViewMethod: DataViewInstance) => {
     const addRow = () => dataViewMethod.addRow?.('start');
 
-    // Determine which title to display
     let titleToDisplay = this.model.props.title;
-    let displayName = 'local database';
 
-    // If this database has a tableId, it's linked to a source database
     if (this.model.props.tableId) {
       const sourceModel = this._resolveTargetModel();
       if (sourceModel && sourceModel.props.title) {
         titleToDisplay = sourceModel.props.title;
-        displayName = 'source database';
-        console.log(
-          '[DatabaseBlock] Using title from source database:',
-          titleToDisplay?.toString()
-        );
       } else {
         console.warn(
           '[DatabaseBlock] Could not resolve source model for tableId:',
@@ -217,14 +206,6 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
         );
       }
     }
-
-    // Logs pour diagnostiquer le rendu du titre
-    console.log('[DatabaseBlock] Rendering title for', displayName, ':', {
-      blockId: this.model.id,
-      tableId: this.model.props.tableId,
-      title: titleToDisplay?.toString(),
-      readonly: this.dataSource.readonly$.value,
-    });
 
     return html` <affine-database-title
       style="overflow: hidden"
@@ -282,18 +263,6 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
 
   headerWidget: DataViewWidget = defineUniComponent(
     (props: DataViewWidgetProps) => {
-      const tableId = this.model.props?.tableId;
-
-      // Logs pour diagnostiquer l'affichage de l'ID de table
-      console.log('[DatabaseBlock] Rendering headerWidget for database:', {
-        blockId: this.model.id,
-        title: this.model.props.title?.toString(),
-        tableId: tableId,
-        hasTableId: !!tableId,
-        allProps: Object.keys(this.model.props || {}),
-        propsValues: this.model.props,
-      });
-
       return html`
         <div style="margin-bottom: 16px;display:flex;flex-direction: column">
           <div
@@ -411,41 +380,35 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
 
   get dataSource(): DatabaseBlockDataSource {
     if (!this._dataSource) {
-      // Determine which model to use for the data source
       let modelToUse = this.model;
 
-      // If this database has a tableId, use the source model for data
       if (this.model.props.tableId) {
         const sourceModel = this._resolveTargetModel();
         if (sourceModel) {
           modelToUse = sourceModel;
-          console.log(
-            '[DatabaseBlockComponent] Using source model for data source:',
-            modelToUse.id
-          );
         } else {
           console.warn(
             '[DatabaseBlockComponent] Could not resolve source model, using local model'
           );
         }
-      } else {
-        console.log(
-          '[DatabaseBlockComponent] Using local model for data source:',
-          modelToUse.id
-        );
       }
 
-      this._dataSource = new DatabaseBlockDataSource(modelToUse, dataSource => {
-        dataSource.serviceSet(EditorHostKey, this.host);
-        this.std.provider
-          .getAll(ExternalGroupByConfigProvider)
-          .forEach(config => {
-            dataSource.serviceSet(
-              ExternalGroupByConfigProvider(config.name),
-              config
-            );
-          });
-      });
+      this._dataSource = new DatabaseBlockDataSource(
+        modelToUse,
+        dataSource => {
+          dataSource.serviceSet(EditorHostKey, this.host);
+          this.std.provider
+            .getAll(ExternalGroupByConfigProvider)
+            .forEach(config => {
+              dataSource.serviceSet(
+                ExternalGroupByConfigProvider(config.name),
+                config
+              );
+            });
+        },
+        this._dataSourceRefreshCounter
+      );
+
       const id = currentViewStorage.getCurrentView(this.model.id);
       if (id && this.dataSource.viewManager.viewGet(id)) {
         this.dataSource.viewManager.setCurrentView(id);
@@ -510,93 +473,81 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
 
     // Check and migrate this block if needed
     this.checkAndMigrateBlock();
-
-    // Ensure table is registered in workspace index on every render
     this.ensureTableRegistered();
-
-    // Logs pour diagnostiquer le rendu du bloc de base de données
-    console.log('[DatabaseBlock] Rendering database block:', {
-      blockId: this.model.id,
-      title: this.model.props.title?.toString(),
-      tableId: this.model.props?.tableId,
-      hasHeaderWidget: !!this.headerWidget,
-    });
 
     return html`
       <div
         contenteditable="false"
         style="position: relative;background-color: var(--affine-background-primary-color);border-radius: 4px"
       >
-        ${this.dataView.render({
-          virtualPadding$: this.virtualPadding$,
-          bindHotkey: this._bindHotkey,
-          handleEvent: this._handleEvent,
-          selection$: this.viewSelection$,
-          setSelection: this.setSelection,
-          dataSource: this.dataSource,
-          headerWidget: this.headerWidget,
-          onDrag: this.onDrag,
-          clipboard: this.std.clipboard,
-          notification: {
-            toast: message => {
-              const notification = this.std.getOptional(NotificationProvider);
-              if (notification) {
-                notification.toast(message);
-              } else {
-                toast(this.host, message);
-              }
-            },
-          },
-          eventTrace: (key, params) => {
-            telemetryService?.track(key, {
-              ...(params as TelemetryEventMap[typeof key]),
-              blockId: this.blockId,
-            });
-          },
-          detailPanelConfig: {
-            openDetailPanel: (target, data) => {
-              if (peekViewService) {
-                const openDoc = (docId: string) => {
-                  return peekViewService.peek({
-                    docId,
-                    databaseId: this.blockId,
-                    databaseDocId: this.model.store.id,
-                    databaseRowId: data.rowId,
-                    target: this,
-                  });
-                };
-                const doc = getSingleDocIdFromText(
-                  this.model.store.getBlock(data.rowId)?.model?.text
-                );
-                if (doc) {
-                  return openDoc(doc);
+        ${keyed(
+          `dataview-${this.model.id}-${this._dataSourceRefreshCounter}`,
+          this.dataView.render({
+            virtualPadding$: this.virtualPadding$,
+            bindHotkey: this._bindHotkey,
+            handleEvent: this._handleEvent,
+            selection$: this.viewSelection$,
+            setSelection: this.setSelection,
+            dataSource: this.dataSource,
+            headerWidget: this.headerWidget,
+            onDrag: this.onDrag,
+            clipboard: this.std.clipboard,
+            notification: {
+              toast: message => {
+                const notification = this.std.getOptional(NotificationProvider);
+                if (notification) {
+                  notification.toast(message);
+                } else {
+                  toast(this.host, message);
                 }
-                const abort = new AbortController();
-                return new Promise<void>(focusBack => {
-                  peekViewService
-                    .peek(
-                      {
-                        target,
-                        template: this.createTemplate(data, docId => {
-                          // abort.abort();
-                          openDoc(docId).then(focusBack).catch(focusBack);
-                        }),
-                      },
-                      { abortSignal: abort.signal }
-                    )
-                    .then(focusBack)
-                    .catch(focusBack);
-                });
-              } else {
-                return popSideDetail(
-                  this.createTemplate(data, () => {
-                    //
-                  })
-                );
-              }
+              },
             },
-          },
-        })}
+            eventTrace: (key, params) => {
+              telemetryService?.track(key, {
+                ...(params as TelemetryEventMap[typeof key]),
+                blockId: this.blockId,
+              });
+            },
+            detailPanelConfig: {
+              openDetailPanel: (target, data) => {
+                if (peekViewService) {
+                  const openDoc = (docId: string) => {
+                    return peekViewService.peek({
+                      docId,
+                      databaseId: this.blockId,
+                      databaseDocId: this.model.store.id,
+                      databaseRowId: data.rowId,
+                      target: this,
+                    });
+                  };
+                  const doc = getSingleDocIdFromText(
+                    this.model.store.getBlock(data.rowId)?.model?.text
+                  );
+                  if (doc) {
+                    return openDoc(doc);
+                  }
+                  const abort = new AbortController();
+                  return new Promise<void>(focusBack => {
+                    peekViewService
+                      .peek(
+                        {
+                          target,
+                          template: this.createTemplate(data, docId => {
+                            openDoc(docId).then(focusBack).catch(focusBack);
+                          }),
+                        },
+                        { abortSignal: abort.signal }
+                      )
+                      .then(focusBack)
+                      .catch(focusBack);
+                  });
+                } else {
+                  return popSideDetail(this.createTemplate(data, () => {}));
+                }
+              },
+            },
+          })
+        )}
       </div>
     `;
   }
@@ -608,30 +559,12 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
     const currentTableId = this.model.props?.tableId;
 
     if (!currentTableId) {
-      console.log(
-        '[DatabaseBlock] Block needs migration, generating tableId...',
-        {
-          blockId: this.model.id,
-          title: this.model.props.title?.toString(),
-        }
-      );
-
-      // Generate new tableId
       const tableId = nanoid();
 
-      // Update the block with tableId using store transaction
       this.store.transact(() => {
         this.model.props.tableId = tableId;
       });
 
-      console.log('[DatabaseBlock] Block migrated with tableId:', {
-        blockId: this.model.id,
-        tableId: tableId,
-        title: this.model.props.title?.toString(),
-      });
-
-      // Emit a custom event that the workspace services can listen to
-      // This allows the table to be registered in the workspace index
       this.dispatchEvent(
         new CustomEvent('database-migrated', {
           detail: {
@@ -643,12 +576,6 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
         })
       );
     } else {
-      console.log('[DatabaseBlock] Block already has tableId:', {
-        blockId: this.model.id,
-        tableId: currentTableId,
-      });
-
-      // Also emit event for existing tables to ensure they're registered
       this.dispatchEvent(
         new CustomEvent('database-ready', {
           detail: {
@@ -671,13 +598,9 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
   private ensureTableRegistered() {
     const tableId = this.model.props?.tableId;
     if (!tableId) {
-      // No tableId yet, nothing to register
       return;
     }
 
-    // Emit an event to request registration check
-    // The workspace services will check if this table is already indexed
-    // and register it if missing
     this.dispatchEvent(
       new CustomEvent('database-ensure-indexed', {
         detail: {
@@ -688,12 +611,6 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
         bubbles: true,
       })
     );
-
-    console.log('[DatabaseBlock] Requested table registration check:', {
-      blockId: this.model.id,
-      tableId: tableId,
-      title: this.model.props.title?.toString(),
-    });
   }
 
   /**
@@ -702,7 +619,6 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
   private _getCurrentSourceInfo(): { tableId: string } | null {
     const tableId = this.model.props.tableId;
     if (!tableId) {
-      console.log('[DatabaseBlockComponent] No tableId found in model props');
       return null;
     }
     return { tableId };
@@ -713,18 +629,12 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
    */
   private _getAvailableTablesFromWorkspace(): any[] {
     try {
-      // Try to access workspace meta through the store
       const workspace = this.store.workspace;
       if (!workspace?.meta?.tables) {
-        console.log('[DatabaseBlockComponent] No workspace meta tables found');
         return [];
       }
 
       const tables = Object.values(workspace.meta.tables);
-      console.log(
-        '[DatabaseBlockComponent] Found tables in workspace meta:',
-        tables
-      );
       return tables;
     } catch (error) {
       console.error(
@@ -746,7 +656,6 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
     }
 
     try {
-      // Get the table meta from workspace
       const workspace = this.store.workspace;
       if (!workspace?.meta?.tables) {
         console.warn('[DatabaseBlockComponent] No workspace meta tables found');
@@ -762,7 +671,6 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
         return null;
       }
 
-      // Get the source block using the blockId
       const sourceBlock = this.store.getBlock(tableMeta.blockId);
       if (
         !sourceBlock?.model ||
@@ -775,12 +683,6 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
         return null;
       }
 
-      console.log(
-        '[DatabaseBlockComponent] Resolved target model for tableId:',
-        tableId,
-        'blockId:',
-        tableMeta.blockId
-      );
       return sourceBlock.model as DatabaseBlockModel;
     } catch (error) {
       console.error(
@@ -806,30 +708,19 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
         return null;
       }
 
-      // For database blocks, get title from the model's title property
       if (block.model.flavour === 'affine:database') {
         const databaseModel = block.model as DatabaseBlockModel;
 
-        // The title is a Text object, we need to convert it to string
         if (databaseModel.props.title) {
           const titleText = databaseModel.props.title.toString();
           if (titleText && titleText.trim()) {
-            console.log(
-              '[DatabaseBlockComponent] Found title for database block:',
-              titleText.trim()
-            );
             return titleText.trim();
           }
         }
 
-        console.log(
-          '[DatabaseBlockComponent] No title found for database block:',
-          blockId
-        );
         return null;
       }
 
-      // For other block types with title property
       if ('title' in block.model.props && block.model.props.title) {
         const titleProperty = block.model.props.title as any;
         if (titleProperty && typeof titleProperty.toString === 'function') {
@@ -840,11 +731,6 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
         }
       }
 
-      console.log(
-        '[DatabaseBlockComponent] No title property found for block:',
-        blockId,
-        block.model.flavour
-      );
       return null;
     } catch (error) {
       console.error(
@@ -859,40 +745,49 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
    * Handle switching to a different table source
    */
   private _handleSwitchToTable(table: any): void {
-    console.log('[DatabaseBlockComponent] Switching to table:', table);
+    this.store.transact(() => {
+      this.model.props.tableId = table.id;
+    });
 
-    // Update the tableId property
-    this.model.props.tableId = table.id;
-
-    // Increment usage count for new source
     this._dispatchUsageEvent('database-usage-increased', table.id);
 
-    // Get dynamic title for display
     const dynamicTitle =
       this._getDynamicTitleForBlock(table.blockId) ||
       `Untitled Database (${table.id.slice(-6)})`;
 
-    // Show success toast
     toast(this.host, `Switched to database: ${dynamicTitle}`);
 
-    // Force refresh of data source
     this._refreshDataSource();
+
+    setTimeout(() => {
+      const currentDataSource = this._dataSource;
+      if (currentDataSource && currentDataSource.model.id !== table.blockId) {
+        console.warn(
+          '[DatabaseBlockComponent] Primary refresh failed, trying aggressive recreation...'
+        );
+        this._forceDataSourceRecreation();
+      }
+    }, 500);
   }
 
-  /**
-   * Handle creating new database
-   */
   private _handleCreateNewDatabase(): void {
-    console.log('[DatabaseBlockComponent] Creating new database');
+    this.store.transact(() => {
+      delete this.model.props.tableId;
+    });
 
-    // Remove tableId to indicate this is now an independent database
-    delete this.model.props.tableId;
-
-    // Show success toast
     toast(this.host, 'Switched to new database');
 
-    // Force refresh of data source
     this._refreshDataSource();
+
+    setTimeout(() => {
+      const currentDataSource = this._dataSource;
+      if (currentDataSource && this.model.props.tableId) {
+        console.warn(
+          '[DatabaseBlockComponent] New database creation may need aggressive refresh...'
+        );
+        this._forceDataSourceRecreation();
+      }
+    }, 500);
   }
 
   /**
@@ -902,11 +797,9 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
     const currentSource = this._getCurrentSourceInfo();
 
     if (currentSource) {
-      // Check if other views are using this source
       this._checkUsageBeforeDeletion(currentSource.tableId);
     }
 
-    // Proceed with standard deletion
     this.model.children.slice().forEach(block => {
       this.store.deleteBlock(block);
     });
@@ -946,10 +839,40 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
 
   /**
    * Force refresh of data source when source changes
+   * Ensures all DataView subcomponents update correctly without manual reload
    */
   private _refreshDataSource(): void {
-    // Trigger re-render by updating the component
+    this._dataSourceRefreshCounter++;
+    this._dataSource = undefined;
+
     this.requestUpdate();
+
+    setTimeout(() => {
+      const currentPadding = this.virtualPadding$.value;
+      this.virtualPadding$.value = currentPadding + 0.001;
+
+      this.requestUpdate();
+
+      requestAnimationFrame(() => {
+        this.virtualPadding$.value = currentPadding;
+        this.requestUpdate();
+      });
+    }, 0);
+  }
+
+  private _forceDataSourceRecreation(): void {
+    this._dataSourceRefreshCounter += 10;
+    this._dataSource = undefined;
+
+    this.requestUpdate();
+
+    setTimeout(() => {
+      this.requestUpdate();
+
+      setTimeout(() => {
+        this.requestUpdate();
+      }, 100);
+    }, 100);
   }
 
   override accessor useZeroWidth = true;

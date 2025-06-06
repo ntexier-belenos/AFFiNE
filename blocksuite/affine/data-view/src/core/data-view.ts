@@ -170,8 +170,16 @@ export class DataViewRenderer extends SignalWatcher(
     const renderer = viewData.view.meta.renderer;
     const view =
       (IS_MOBILE ? renderer.mobileView : renderer.view) ?? renderer.view;
+
+    // Create a unique key that includes both view ID and data source identifier
+    const dataSourceId = (this.config.dataSource as any).model?.id || 'unknown';
+    const dataSourceInstanceId =
+      (this.config.dataSource as any).instanceId || 'no-instance-id';
+    const refreshCounter = (this.config.dataSource as any).refreshCounter || 0;
+    const uniqueKey = `${viewData.view.id}-${dataSourceId}-${dataSourceInstanceId}-refresh-${refreshCounter}`;
+
     return keyed(
-      viewData.view.id,
+      uniqueKey,
       renderUniLit(
         view,
         { props },
@@ -201,6 +209,7 @@ export class DataViewRenderer extends SignalWatcher(
       'data-view-root': true,
       'prevent-reference-popup': true,
     });
+
     return html`
       <div style="display: contents" class="${containerClass}">
         ${this.renderView(this.currentViewConfig$.value)}

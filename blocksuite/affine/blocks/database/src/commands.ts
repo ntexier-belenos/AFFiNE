@@ -127,11 +127,6 @@ function registerTableInWorkspace(
 
     // Register in workspace index
     workspaceMeta.addTable(tableMeta);
-
-    console.log(`Table ${tableId} registered in workspace index`, {
-      pageId,
-      blockId,
-    });
   } catch (error) {
     console.error('Failed to register table in workspace index:', error);
   }
