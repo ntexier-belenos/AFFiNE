@@ -105,26 +105,13 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
   `;
 
   private readonly _clickDatabaseOps = (e: MouseEvent) => {
-    // Récupération des bases de données existantes (hors celle en cours)
-    // Utilisation de getAllBlocksByFlavour si disponible, sinon fallback vide
-    let allDatabases: DatabaseBlockModel[] = [];
-    if (typeof (this.store as any).getAllBlocksByFlavour === 'function') {
-      allDatabases = (this.store as any).getAllBlocksByFlavour(
-        'affine:database'
-      ) as DatabaseBlockModel[];
-    }
-    // Traces pour debug
-    console.log('[DatabaseBlockComponent] Base courante:', {
-      id: this.model.id,
-      title: this.model.props.title?.toString(),
-    });
+    const currentSource = this._getCurrentSourceInfo();
+    const availableTables = this._getAvailableTablesFromWorkspace();
+
+    console.log('[DatabaseBlockComponent] Current source:', currentSource);
     console.log(
-      '[DatabaseBlockComponent] Toutes les bases de données trouvées:',
-      allDatabases.map(db => ({
-        id: db.id,
-        title: db.props.title?.toString(),
-        isCurrent: db.id === this.model.id,
-      }))
+      '[DatabaseBlockComponent] Available tables from workspace:',
+      availableTables
     );
 
     const options = this.optionsConfig.configure(this.model, {
@@ -140,47 +127,30 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
             );
           },
         }),
-        // Ajout du sous-menu Source
+        // Source menu with workspace tables
         menu.subMenu({
           name: 'Source',
           options: {
             title: { text: 'Select database source' },
             items: [
               menu.action({
-                name: 'New database',
-                select: () => {
-                  console.log(
-                    '[DatabaseBlockComponent] Choix: Nouvelle base de données'
-                  );
-                  toast(this.host, 'Switched to new database mode');
-                },
+                name: 'New Database',
+                select: () => this._handleCreateNewDatabase(),
               }),
-              ...(allDatabases.length > 0
-                ? allDatabases.map(db =>
-                    menu.action({
-                      name: db.props.title?.toString() || db.id,
-                      isSelected: db.id === this.model.id,
-                      select: () => {
-                        console.log(
-                          '[DatabaseBlockComponent] Choix: Source',
-                          db.id,
-                          db.props.title?.toString(),
-                          db.id === this.model.id ? '(courante)' : ''
-                        );
-                        toast(
-                          this.host,
-                          `Switched to source: ${db.props.title?.toString() || db.id}`
-                        );
-                      },
-                    })
-                  )
-                : [
-                    menu.action({
-                      name: 'No database found',
-                      select: () => {},
-                      class: { 'disabled-item': true },
-                    }),
-                  ]),
+              menu.group({
+                items: availableTables.map(table => {
+                  const blockTitle =
+                    this._getDynamicTitleForBlock(table.blockId) ||
+                    `Untitled Database (${table.id.slice(-6)})`;
+                  const isCurrentSource = currentSource?.tableId === table.id;
+
+                  return menu.action({
+                    name: blockTitle,
+                    isSelected: isCurrentSource,
+                    select: () => this._handleSwitchToTable(table),
+                  });
+                }),
+              }),
             ],
           },
         }),
@@ -206,10 +176,7 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
               },
               name: 'Delete Database',
               select: () => {
-                this.model.children.slice().forEach(block => {
-                  this.store.deleteBlock(block);
-                });
-                this.store.deleteBlock(this.model);
+                this._handleDatabaseDeletion();
               },
             }),
           ],
@@ -229,16 +196,39 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
   private readonly renderTitle = (dataViewMethod: DataViewInstance) => {
     const addRow = () => dataViewMethod.addRow?.('start');
 
+    // Determine which title to display
+    let titleToDisplay = this.model.props.title;
+    let displayName = 'local database';
+
+    // If this database has a tableId, it's linked to a source database
+    if (this.model.props.tableId) {
+      const sourceModel = this._resolveTargetModel();
+      if (sourceModel && sourceModel.props.title) {
+        titleToDisplay = sourceModel.props.title;
+        displayName = 'source database';
+        console.log(
+          '[DatabaseBlock] Using title from source database:',
+          titleToDisplay?.toString()
+        );
+      } else {
+        console.warn(
+          '[DatabaseBlock] Could not resolve source model for tableId:',
+          this.model.props.tableId
+        );
+      }
+    }
+
     // Logs pour diagnostiquer le rendu du titre
-    console.log('[DatabaseBlock] Rendering title for database:', {
+    console.log('[DatabaseBlock] Rendering title for', displayName, ':', {
       blockId: this.model.id,
-      title: this.model.props.title?.toString(),
+      tableId: this.model.props.tableId,
+      title: titleToDisplay?.toString(),
       readonly: this.dataSource.readonly$.value,
     });
 
     return html` <affine-database-title
       style="overflow: hidden"
-      .titleText="${this.model.props.title}"
+      .titleText="${titleToDisplay}"
       .readonly="${this.dataSource.readonly$.value}"
       .onPressEnterKey="${addRow}"
     ></affine-database-title>`;
@@ -421,7 +411,31 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
 
   get dataSource(): DatabaseBlockDataSource {
     if (!this._dataSource) {
-      this._dataSource = new DatabaseBlockDataSource(this.model, dataSource => {
+      // Determine which model to use for the data source
+      let modelToUse = this.model;
+
+      // If this database has a tableId, use the source model for data
+      if (this.model.props.tableId) {
+        const sourceModel = this._resolveTargetModel();
+        if (sourceModel) {
+          modelToUse = sourceModel;
+          console.log(
+            '[DatabaseBlockComponent] Using source model for data source:',
+            modelToUse.id
+          );
+        } else {
+          console.warn(
+            '[DatabaseBlockComponent] Could not resolve source model, using local model'
+          );
+        }
+      } else {
+        console.log(
+          '[DatabaseBlockComponent] Using local model for data source:',
+          modelToUse.id
+        );
+      }
+
+      this._dataSource = new DatabaseBlockDataSource(modelToUse, dataSource => {
         dataSource.serviceSet(EditorHostKey, this.host);
         this.std.provider
           .getAll(ExternalGroupByConfigProvider)
@@ -624,7 +638,6 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
             pageId: this.store.id,
             blockId: this.model.id,
             tableId: tableId,
-            title: this.model.props.title?.toString() || 'Untitled Table',
           },
           bubbles: true,
         })
@@ -633,7 +646,6 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
       console.log('[DatabaseBlock] Block already has tableId:', {
         blockId: this.model.id,
         tableId: currentTableId,
-        title: this.model.props.title?.toString(),
       });
 
       // Also emit event for existing tables to ensure they're registered
@@ -643,7 +655,6 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
             pageId: this.store.id,
             blockId: this.model.id,
             tableId: currentTableId,
-            title: this.model.props.title?.toString() || 'Untitled Table',
           },
           bubbles: true,
         })
@@ -673,7 +684,6 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
           pageId: this.store.id,
           blockId: this.model.id,
           tableId: tableId,
-          title: this.model.props.title?.toString() || 'Untitled Table',
         },
         bubbles: true,
       })
@@ -684,6 +694,262 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
       tableId: tableId,
       title: this.model.props.title?.toString(),
     });
+  }
+
+  /**
+   * Get current source information for this database
+   */
+  private _getCurrentSourceInfo(): { tableId: string } | null {
+    const tableId = this.model.props.tableId;
+    if (!tableId) {
+      console.log('[DatabaseBlockComponent] No tableId found in model props');
+      return null;
+    }
+    return { tableId };
+  }
+
+  /**
+   * Get available tables from workspace meta
+   */
+  private _getAvailableTablesFromWorkspace(): any[] {
+    try {
+      // Try to access workspace meta through the store
+      const workspace = this.store.workspace;
+      if (!workspace?.meta?.tables) {
+        console.log('[DatabaseBlockComponent] No workspace meta tables found');
+        return [];
+      }
+
+      const tables = Object.values(workspace.meta.tables);
+      console.log(
+        '[DatabaseBlockComponent] Found tables in workspace meta:',
+        tables
+      );
+      return tables;
+    } catch (error) {
+      console.error(
+        '[DatabaseBlockComponent] Error accessing workspace meta:',
+        error
+      );
+      return [];
+    }
+  }
+
+  /**
+   * Resolve the target model when this database is linked to a source
+   * Returns the source database model or null if not found
+   */
+  private _resolveTargetModel(): DatabaseBlockModel | null {
+    const tableId = this.model.props.tableId;
+    if (!tableId) {
+      return null;
+    }
+
+    try {
+      // Get the table meta from workspace
+      const workspace = this.store.workspace;
+      if (!workspace?.meta?.tables) {
+        console.warn('[DatabaseBlockComponent] No workspace meta tables found');
+        return null;
+      }
+
+      const tableMeta = workspace.meta.tables[tableId];
+      if (!tableMeta?.blockId) {
+        console.warn(
+          '[DatabaseBlockComponent] No table meta or blockId found for tableId:',
+          tableId
+        );
+        return null;
+      }
+
+      // Get the source block using the blockId
+      const sourceBlock = this.store.getBlock(tableMeta.blockId);
+      if (
+        !sourceBlock?.model ||
+        sourceBlock.model.flavour !== 'affine:database'
+      ) {
+        console.warn(
+          '[DatabaseBlockComponent] Source block not found or not a database:',
+          tableMeta.blockId
+        );
+        return null;
+      }
+
+      console.log(
+        '[DatabaseBlockComponent] Resolved target model for tableId:',
+        tableId,
+        'blockId:',
+        tableMeta.blockId
+      );
+      return sourceBlock.model as DatabaseBlockModel;
+    } catch (error) {
+      console.error(
+        '[DatabaseBlockComponent] Error resolving target model:',
+        error
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Get dynamic title for a block by blockId
+   * Retrieves the title from the database block model
+   */
+  private _getDynamicTitleForBlock(blockId: string): string | null {
+    try {
+      const block = this.store.getBlock(blockId);
+      if (!block?.model) {
+        console.warn(
+          '[DatabaseBlockComponent] Block or model not found for blockId:',
+          blockId
+        );
+        return null;
+      }
+
+      // For database blocks, get title from the model's title property
+      if (block.model.flavour === 'affine:database') {
+        const databaseModel = block.model as DatabaseBlockModel;
+
+        // The title is a Text object, we need to convert it to string
+        if (databaseModel.props.title) {
+          const titleText = databaseModel.props.title.toString();
+          if (titleText && titleText.trim()) {
+            console.log(
+              '[DatabaseBlockComponent] Found title for database block:',
+              titleText.trim()
+            );
+            return titleText.trim();
+          }
+        }
+
+        console.log(
+          '[DatabaseBlockComponent] No title found for database block:',
+          blockId
+        );
+        return null;
+      }
+
+      // For other block types with title property
+      if ('title' in block.model.props && block.model.props.title) {
+        const titleProperty = block.model.props.title as any;
+        if (titleProperty && typeof titleProperty.toString === 'function') {
+          const titleText = titleProperty.toString();
+          if (titleText && titleText.trim()) {
+            return titleText.trim();
+          }
+        }
+      }
+
+      console.log(
+        '[DatabaseBlockComponent] No title property found for block:',
+        blockId,
+        block.model.flavour
+      );
+      return null;
+    } catch (error) {
+      console.error(
+        '[DatabaseBlockComponent] Error getting block title:',
+        error
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Handle switching to a different table source
+   */
+  private _handleSwitchToTable(table: any): void {
+    console.log('[DatabaseBlockComponent] Switching to table:', table);
+
+    // Update the tableId property
+    this.model.props.tableId = table.id;
+
+    // Increment usage count for new source
+    this._dispatchUsageEvent('database-usage-increased', table.id);
+
+    // Get dynamic title for display
+    const dynamicTitle =
+      this._getDynamicTitleForBlock(table.blockId) ||
+      `Untitled Database (${table.id.slice(-6)})`;
+
+    // Show success toast
+    toast(this.host, `Switched to database: ${dynamicTitle}`);
+
+    // Force refresh of data source
+    this._refreshDataSource();
+  }
+
+  /**
+   * Handle creating new database
+   */
+  private _handleCreateNewDatabase(): void {
+    console.log('[DatabaseBlockComponent] Creating new database');
+
+    // Remove tableId to indicate this is now an independent database
+    delete this.model.props.tableId;
+
+    // Show success toast
+    toast(this.host, 'Switched to new database');
+
+    // Force refresh of data source
+    this._refreshDataSource();
+  }
+
+  /**
+   * Handle database deletion with usage protection
+   */
+  private _handleDatabaseDeletion(): void {
+    const currentSource = this._getCurrentSourceInfo();
+
+    if (currentSource) {
+      // Check if other views are using this source
+      this._checkUsageBeforeDeletion(currentSource.tableId);
+    }
+
+    // Proceed with standard deletion
+    this.model.children.slice().forEach(block => {
+      this.store.deleteBlock(block);
+    });
+    this.store.deleteBlock(this.model);
+  }
+
+  /**
+   * Check usage count before allowing deletion
+   */
+  private _checkUsageBeforeDeletion(tableId: string): void {
+    try {
+      const workspace = this.store.workspace;
+      const table = workspace?.meta?.getTable?.(tableId);
+
+      if (table && table.usageCount > 1) {
+        toast(
+          this.host,
+          `Cannot delete database. It is being used in ${table.usageCount - 1} other view(s).`
+        );
+        throw new Error('Database is in use');
+      }
+    } catch (error) {
+      console.error('[DatabaseBlockComponent] Error checking usage:', error);
+    }
+  }
+
+  /**
+   * Dispatch usage events for workspace meta management
+   */
+  private _dispatchUsageEvent(eventType: string, tableId: string): void {
+    const event = new CustomEvent(eventType, {
+      detail: { tableId },
+      bubbles: true,
+    });
+    this.dispatchEvent(event);
+  }
+
+  /**
+   * Force refresh of data source when source changes
+   */
+  private _refreshDataSource(): void {
+    // Trigger re-render by updating the component
+    this.requestUpdate();
   }
 
   override accessor useZeroWidth = true;

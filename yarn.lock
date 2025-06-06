@@ -2563,6 +2563,7 @@ __metadata:
     date-fns: "npm:^4.0.0"
     lit: "npm:^3.2.0"
     minimatch: "npm:^10.0.1"
+    nanoid: "npm:^5.0.0"
     rxjs: "npm:^7.8.1"
     yjs: "npm:^13.6.21"
     zod: "npm:^3.23.8"
@@ -27408,7 +27409,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"nanoid@npm:^5.0.1, nanoid@npm:^5.0.7, nanoid@npm:^5.0.9":
+"nanoid@npm:^5.0.0, nanoid@npm:^5.0.1, nanoid@npm:^5.0.7, nanoid@npm:^5.0.9":
   version: 5.1.5
   resolution: "nanoid@npm:5.1.5"
   bin:
