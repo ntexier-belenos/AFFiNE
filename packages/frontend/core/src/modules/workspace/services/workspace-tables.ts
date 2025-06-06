@@ -152,10 +152,8 @@ export class WorkspaceTablesService extends Service {
     const tables = this.getAllTables();
     const lowercaseQuery = query.toLowerCase();
 
-    return tables.filter(
-      table =>
-        table.title.toLowerCase().includes(lowercaseQuery) ||
-        table.id.toLowerCase().includes(lowercaseQuery)
+    return tables.filter(table =>
+      table.id.toLowerCase().includes(lowercaseQuery)
     );
   }
 
@@ -163,7 +161,7 @@ export class WorkspaceTablesService extends Service {
    * Register a new table in the index
    * This is typically called automatically by the block creation commands
    */
-  registerTable(pageId: string, blockId: string, title: string): string {
-    return this.tableIndexService.registerTable(pageId, blockId, title);
+  registerTable(pageId: string, blockId: string, tableId?: string): string {
+    return this.tableIndexService.registerTable(pageId, blockId, tableId);
   }
 }

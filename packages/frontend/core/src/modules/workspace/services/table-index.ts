@@ -31,7 +31,6 @@ export class TableIndexService extends Service {
   registerTable(
     pageId: string,
     blockId: string,
-    title: string,
     tableId?: string,
     initialUsageCount: number = 0
   ): string {
@@ -40,7 +39,6 @@ export class TableIndexService extends Service {
 
     const tableMeta: TableMeta = {
       id: finalTableId,
-      title,
       pageId,
       blockId,
       usageCount: initialUsageCount,
@@ -85,7 +83,7 @@ export class TableIndexService extends Service {
 
     if (table.usageCount > 0) {
       throw new Error(
-        `Cannot delete table "${table.title}". It is being used in ${table.usageCount} relation(s).`
+        `Cannot delete table ${tableId}. It is being used in ${table.usageCount} relation(s).`
       );
     }
 

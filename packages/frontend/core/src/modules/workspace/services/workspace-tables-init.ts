@@ -77,12 +77,11 @@ export class WorkspaceTablesInitializationService extends Service {
 
     // Listen for database-ready events (when a table already has a tableId)
     document.addEventListener('database-ready', ((event: CustomEvent) => {
-      const { pageId, blockId, tableId, title } = event.detail;
+      const { pageId, blockId, tableId } = event.detail;
       console.log('[WorkspaceTablesInit] Database ready event:', {
         pageId,
         blockId,
         tableId,
-        title,
       });
 
       try {
@@ -97,7 +96,6 @@ export class WorkspaceTablesInitializationService extends Service {
           const registeredTableId = this.tableIndexService.registerTable(
             pageId,
             blockId,
-            title,
             tableId,
             1 // Initial usage count of 1 for existing tables
           );
@@ -107,7 +105,6 @@ export class WorkspaceTablesInitializationService extends Service {
               pageId,
               blockId,
               tableId: registeredTableId,
-              title,
             }
           );
         } else {
@@ -126,12 +123,11 @@ export class WorkspaceTablesInitializationService extends Service {
 
     // Listen for database-migrated events (when a table was just assigned a tableId)
     document.addEventListener('database-migrated', ((event: CustomEvent) => {
-      const { pageId, blockId, tableId, title } = event.detail;
+      const { pageId, blockId, tableId } = event.detail;
       console.log('[WorkspaceTablesInit] Database migrated event:', {
         pageId,
         blockId,
         tableId,
-        title,
       });
 
       try {
@@ -146,7 +142,6 @@ export class WorkspaceTablesInitializationService extends Service {
           const registeredTableId = this.tableIndexService.registerTable(
             pageId,
             blockId,
-            title,
             tableId,
             1 // Initial usage count of 1 for migrated tables
           );
@@ -156,7 +151,6 @@ export class WorkspaceTablesInitializationService extends Service {
               pageId,
               blockId,
               tableId: registeredTableId,
-              title,
             }
           );
         } else {
@@ -177,7 +171,7 @@ export class WorkspaceTablesInitializationService extends Service {
     document.addEventListener('database-ensure-indexed', ((
       event: CustomEvent
     ) => {
-      const { pageId, blockId, tableId, title } = event.detail;
+      const { pageId, blockId, tableId } = event.detail;
 
       try {
         // Check if table is already indexed
@@ -191,7 +185,6 @@ export class WorkspaceTablesInitializationService extends Service {
           const registeredTableId = this.tableIndexService.registerTable(
             pageId,
             blockId,
-            title,
             tableId,
             1 // Initial usage count of 1 for rendered tables
           );
@@ -201,7 +194,6 @@ export class WorkspaceTablesInitializationService extends Service {
               pageId,
               blockId,
               tableId: registeredTableId,
-              title,
             }
           );
         }

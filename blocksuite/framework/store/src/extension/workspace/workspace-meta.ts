@@ -8,7 +8,6 @@ export type Tag = {
 
 export type TableMeta = {
   id: string;
-  title: string;
   pageId: string;
   blockId: string;
   usageCount: number;

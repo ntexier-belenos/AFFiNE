@@ -114,15 +114,10 @@ function registerTableInWorkspace(
       return;
     }
 
-    // Get table title from block model
-    const blockModel = block.model as DatabaseBlockModel;
-    const title = blockModel.props.title?.toString() || 'Untitled Table';
-
     // Create table metadata
     const now = Date.now();
     const tableMeta = {
       id: tableId,
-      title,
       pageId,
       blockId,
       usageCount: 1, // Initial usage count of 1 for newly created tables (they have at least one view)
@@ -134,7 +129,6 @@ function registerTableInWorkspace(
     workspaceMeta.addTable(tableMeta);
 
     console.log(`Table ${tableId} registered in workspace index`, {
-      title,
       pageId,
       blockId,
     });

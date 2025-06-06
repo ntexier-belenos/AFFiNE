@@ -88,7 +88,6 @@ export class TableObserverService extends Service {
     const now = Date.now();
     const tableMeta = {
       id: tableId,
-      title: blockModel.props?.title?.toString() || 'Untitled Table',
       pageId,
       blockId: event.id,
       usageCount: 0,
@@ -117,7 +116,7 @@ export class TableObserverService extends Service {
     // Check usage count before deletion
     if (tableToDelete.usageCount > 0) {
       console.warn(
-        `Attempted to delete table "${tableToDelete.title}" with ${tableToDelete.usageCount} active usage(s). Manual intervention required.`
+        `Attempted to delete table ${tableToDelete.id} with ${tableToDelete.usageCount} active usage(s). Manual intervention required.`
       );
       return;
     }
@@ -129,7 +128,7 @@ export class TableObserverService extends Service {
   }
 
   /**
-   * Handle table updates - sync title and other metadata
+   * Handle table updates - sync metadata (no longer syncing title as it's dynamic)
    */
   private handleTableUpdate(event: {
     id: string;
@@ -145,18 +144,12 @@ export class TableObserverService extends Service {
     const existingTable = workspaceMeta.getTable(blockModel.props.tableId);
     if (!existingTable) return;
 
-    // Check if title was updated
-    const newTitle = blockModel.props.title?.toString();
-    if (newTitle && newTitle !== existingTable.title) {
-      workspaceMeta.updateTable(blockModel.props.tableId, {
-        title: newTitle,
-        updatedAt: Date.now(),
-      });
+    // Update timestamp only - title is now dynamic and fetched from block
+    workspaceMeta.updateTable(blockModel.props.tableId, {
+      updatedAt: Date.now(),
+    });
 
-      console.log(
-        `Table ${blockModel.props.tableId} title updated to "${newTitle}"`
-      );
-    }
+    console.log(`Table ${blockModel.props.tableId} metadata updated`);
   }
 
   /**
