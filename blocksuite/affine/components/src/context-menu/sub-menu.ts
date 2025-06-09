@@ -11,7 +11,7 @@ import { property } from 'lit/decorators.js';
 import { classMap } from 'lit/directives/class-map.js';
 
 import { MenuFocusable } from './focusable.js';
-import { Menu, type MenuOptions } from './menu.js';
+import { Menu, type MenuConfig, type MenuOptions } from './menu.js';
 import { popMenu, popupTargetFromElement } from './menu-renderer.js';
 import type { MenuItemRender } from './types.js';
 
@@ -20,6 +20,7 @@ export type MenuSubMenuData = {
   options: MenuOptions;
   select?: () => void;
   class?: string;
+  refreshData?: () => MenuConfig[] | Promise<MenuConfig[]>;
 };
 export const subMenuOffset = offset({
   mainAxis: 16,
@@ -63,6 +64,7 @@ export class MenuSubMenu extends MenuFocusable {
     const focus = this.menu.currentFocused$.value;
     const menu = new Menu({
       ...this.data.options,
+      refreshData: this.data.refreshData, // Propager la capacité de refresh
       onComplete: () => {
         this.menu.close();
       },
@@ -122,6 +124,7 @@ export class MobileSubMenu extends MenuFocusable {
     const { menu } = popMenu(popupTargetFromElement(this), {
       options: {
         ...this.data.options,
+        refreshData: this.data.refreshData, // Propager la capacité de refresh
         onComplete: () => {
           this.menu.close();
         },
@@ -171,6 +174,7 @@ export const subMenuItems = {
       prefix?: TemplateResult;
       class?: string;
       options: MenuOptions;
+      refreshData?: () => MenuConfig[] | Promise<MenuConfig[]>;
       disableArrow?: boolean;
       hide?: () => boolean;
     }) =>
@@ -188,6 +192,7 @@ export const subMenuItems = {
             ${config.disableArrow ? nothing : ArrowRightSmallIcon()} `,
         class: config.class,
         options: config.options,
+        refreshData: config.refreshData,
       };
       return renderSubMenu(data, menu);
     },

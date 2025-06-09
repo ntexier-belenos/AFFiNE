@@ -486,6 +486,7 @@ export type MenuHandler = {
   close: () => void;
   menu: Menu;
   reopen: () => void;
+  refresh: () => Promise<void>;
 };
 
 const popMobileMenu = (options: MenuOptions): MenuHandler => {
@@ -510,6 +511,9 @@ const popMobileMenu = (options: MenuOptions): MenuHandler => {
     reopen: () => {
       menu.close();
       popMobileMenu(options);
+    },
+    refresh: async () => {
+      await menu.refresh();
     },
   };
 };
@@ -557,6 +561,9 @@ export const popMenu = (
     menu,
     reopen: () => {
       popMenu(target, props);
+    },
+    refresh: async () => {
+      await menu.refresh();
     },
   };
 };

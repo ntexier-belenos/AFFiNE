@@ -23,6 +23,11 @@ export type MenuOptions = {
     placeholder?: string;
   };
   items: MenuConfig[];
+  /**
+   * Function to refresh menu data asynchronously
+   * Called when refresh() is invoked to get fresh menu items
+   */
+  refreshData?: () => MenuConfig[] | Promise<MenuConfig[]>;
 };
 
 // Global menu open listener type
@@ -46,6 +51,8 @@ export class Menu {
   private readonly _currentFocused$ = signal<MenuFocusable>();
 
   private readonly _subMenu$ = signal<Menu>();
+
+  private readonly _isRefreshing$ = signal<boolean>(false);
 
   closed = false;
 
@@ -98,6 +105,142 @@ export class Menu {
   closeSubMenu() {
     this._subMenu$.value?.close();
     this._subMenu$.value = undefined;
+  }
+
+  /**
+   * Refresh menu data without closing/reopening the menu
+   * Calls refreshData function if provided and updates menu items
+   */
+  async refresh(): Promise<void> {
+    if (!this.options.refreshData) {
+      // Silent return for menus without refresh capability
+      return;
+    }
+
+    if (this._isRefreshing$.value) {
+      console.warn('Menu refresh already in progress, skipping');
+      return;
+    }
+
+    this._isRefreshing$.value = true;
+
+    try {
+      // Create timeout promise to prevent hanging
+      const refreshPromise = Promise.resolve(this.options.refreshData());
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Menu refresh timeout')), 5000)
+      );
+
+      const newItems = await Promise.race([refreshPromise, timeoutPromise]);
+
+      console.log('[Menu.refresh] Received new items:', newItems?.length || 0);
+      console.log(
+        '[Menu.refresh] Item details:',
+        newItems?.map(
+          (item, index) =>
+            `Item ${index}: ${typeof item === 'function' ? 'Function' : 'Unknown'}`
+        )
+      );
+
+      // Update options with new items
+      this.options = { ...this.options, items: newItems };
+
+      console.log(
+        '[Menu.refresh] Updated menu options with',
+        this.options.items?.length || 0,
+        'items'
+      );
+
+      // Trigger re-render by updating the search result
+      this.searchResult$ = computed(() => {
+        return this.renderItems(this.options.items);
+      });
+
+      // Request update on menu element
+      this._requestUpdate();
+
+      // Refresh sub-menus if any are open (only those with refreshData)
+      await this._refreshSubMenus();
+    } catch (error) {
+      console.error('Menu refresh failed:', error);
+      // Keep current data on error to avoid empty menu
+    } finally {
+      this._isRefreshing$.value = false;
+    }
+  }
+
+  /**
+   * Force re-render of the menu component
+   */
+  private _requestUpdate(): void {
+    if ('requestUpdate' in this.menuElement) {
+      (this.menuElement as any).requestUpdate();
+    }
+  }
+
+  /**
+   * Propagate refresh to open sub-menus
+   */
+  private async _refreshSubMenus(): Promise<void> {
+    console.log('[Menu._refreshSubMenus] Starting propagation...');
+    const subMenu = this._subMenu$.value;
+    console.log('[Menu._refreshSubMenus] SubMenu found:', !!subMenu);
+
+    if (subMenu && subMenu.options?.refreshData) {
+      console.log(
+        '[Menu._refreshSubMenus] SubMenu has refreshData, calling refresh...'
+      );
+      const itemsBeforeRefresh = subMenu.options.items?.length || 0;
+      console.log(
+        '[Menu._refreshSubMenus] SubMenu items before refresh:',
+        itemsBeforeRefresh
+      );
+
+      await subMenu.refresh();
+
+      const itemsAfterRefresh = subMenu.options.items?.length || 0;
+      console.log(
+        '[Menu._refreshSubMenus] SubMenu items after refresh:',
+        itemsAfterRefresh
+      );
+      console.log('[Menu._refreshSubMenus] SubMenu refresh completed');
+
+      // Force explicit re-render of the sub-menu
+      console.log('[Menu._refreshSubMenus] Forcing sub-menu re-render...');
+      subMenu._requestUpdate();
+
+      // CRITICAL FIX: Force the computed to re-evaluate and trigger DOM update
+      console.log('[Menu._refreshSubMenus] Forcing computed re-evaluation...');
+      subMenu.searchResult$ = computed(() => {
+        console.log(
+          '[SubMenu.searchResult$] Re-computing with',
+          subMenu.options.items?.length || 0,
+          'items'
+        );
+        return subMenu.renderItems(subMenu.options.items || []);
+      });
+
+      // Force the menu element to update its rendered content
+      console.log('[Menu._refreshSubMenus] Triggering DOM update...');
+      if (
+        subMenu.menuElement &&
+        'requestUpdate' in subMenu.menuElement &&
+        typeof (subMenu.menuElement as any).requestUpdate === 'function'
+      ) {
+        (subMenu.menuElement as any).requestUpdate();
+      }
+    } else {
+      console.log(
+        '[Menu._refreshSubMenus] SubMenu has no refreshData or no subMenu'
+      );
+    }
+  }
+
+  /**
+   * Get current refresh state (useful for UI loading indicators)
+   */
+  get isRefreshing(): boolean {
+    return this._isRefreshing$.value;
   }
 
   focusNext() {
