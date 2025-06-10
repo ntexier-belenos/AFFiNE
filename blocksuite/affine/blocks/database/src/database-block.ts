@@ -105,11 +105,142 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
     }
   `;
 
+  private readonly _titleCache = new Map<
+    string,
+    { title: string; loading: boolean }
+  >();
+  private readonly _pendingTitleLoads = new Set<string>();
+  private _currentMenuHandler: ReturnType<typeof popMenu> | null = null;
+
   private readonly _clickDatabaseOps = (e: MouseEvent) => {
     const currentSource = this._getCurrentSourceInfo();
     const availableTables = this._getAvailableTablesFromWorkspace();
 
+    this._loadTitlesAsync(availableTables).catch(() => {});
+
     const options = this.optionsConfig.configure(this.model, {
+      refreshData: (() => {
+        return async () => {
+          this._titleCache.clear();
+          this._pendingTitleLoads.clear();
+
+          const refreshedTables = this._getAvailableTablesFromWorkspace();
+
+          await this._loadTitlesAsync(refreshedTables);
+          const refreshedItems = [
+            menu.input({
+              initialValue: this.model.props.title.toString(),
+              placeholder: 'Database title',
+              onChange: text => {
+                this.model.props.title.replace(
+                  0,
+                  this.model.props.title.length,
+                  text
+                );
+              },
+            }),
+
+            menu.subMenu({
+              name: 'Source',
+              options: {
+                title: { text: 'Select database source' },
+                items: [
+                  menu.action({
+                    name: 'New Database',
+                    select: () => this._handleCreateNewDatabase(),
+                  }),
+                  menu.group({
+                    items: refreshedTables.map(table => {
+                      const cachedResult = this._titleCache.get(table.blockId);
+                      const blockTitle =
+                        cachedResult?.title ||
+                        this._getDynamicTitleForBlock(table.blockId, table) ||
+                        `Untitled Database (${table.id.slice(-6)})`;
+
+                      const currentSource = this._getCurrentSourceInfo();
+                      const isCurrentSource =
+                        currentSource?.tableId === table.id;
+
+                      return menu.action({
+                        name: blockTitle,
+                        isSelected: isCurrentSource,
+                        select: () => this._handleSwitchToTable(table),
+                      });
+                    }),
+                  }),
+                ],
+              },
+              refreshData: (() => {
+                return async () => {
+                  const freshTables = this._getAvailableTablesFromWorkspace();
+                  await this._loadTitlesAsync(freshTables);
+
+                  return [
+                    menu.action({
+                      name: 'New Database',
+                      select: () => this._handleCreateNewDatabase(),
+                    }),
+                    menu.group({
+                      items: freshTables.map(table => {
+                        const cachedResult = this._titleCache.get(
+                          table.blockId
+                        );
+                        const blockTitle =
+                          cachedResult?.title ||
+                          this._getDynamicTitleForBlock(table.blockId, table) ||
+                          `Untitled Database (${table.id.slice(-6)})`;
+
+                        const currentSource = this._getCurrentSourceInfo();
+                        const isCurrentSource =
+                          currentSource?.tableId === table.id;
+
+                        return menu.action({
+                          name: blockTitle,
+                          isSelected: isCurrentSource,
+                          select: () => this._handleSwitchToTable(table),
+                        });
+                      }),
+                    }),
+                  ];
+                };
+              })(),
+            }),
+            menu.action({
+              prefix: CopyIcon(),
+              name: 'Copy',
+              select: () => {
+                const slice = Slice.fromModels(this.store, [this.model]);
+                this.std.clipboard
+                  .copySlice(slice)
+                  .then(() => {
+                    toast(this.host, 'Copied to clipboard');
+                  })
+                  .catch(() => {});
+              },
+            }),
+            menu.group({
+              items: [
+                menu.action({
+                  prefix: DeleteIcon(),
+                  class: {
+                    'delete-item': true,
+                  },
+                  name: 'Delete Database',
+                  select: () => {
+                    this._handleDatabaseDeletion();
+                  },
+                }),
+              ],
+            }),
+          ];
+
+          const configuredOptions = this.optionsConfig.configure(this.model, {
+            items: refreshedItems,
+          });
+
+          return configuredOptions.items;
+        };
+      })(),
       items: [
         menu.input({
           initialValue: this.model.props.title.toString(),
@@ -122,7 +253,6 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
             );
           },
         }),
-        // Source menu with workspace tables
         menu.subMenu({
           name: 'Source',
           options: {
@@ -134,9 +264,66 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
               }),
               menu.group({
                 items: availableTables.map(table => {
-                  const blockTitle =
-                    this._getDynamicTitleForBlock(table.blockId) ||
-                    `Untitled Database (${table.id.slice(-6)})`;
+                  const cachedResult = this._titleCache.get(table.blockId);
+                  let blockTitle: string;
+
+                  if (cachedResult && !cachedResult.loading) {
+                    blockTitle = cachedResult.title;
+                  } else {
+                    blockTitle = this._getDynamicTitleForBlock(
+                      table.blockId,
+                      table
+                    );
+
+                    const isUnresolved =
+                      blockTitle === table.blockId ||
+                      blockTitle.includes(table.blockId);
+
+                    if (isUnresolved) {
+                      blockTitle = `Loading... (${table.id.slice(-6)})`;
+                      this._titleCache.set(table.blockId, {
+                        title: blockTitle,
+                        loading: true,
+                      });
+
+                      this._pendingTitleLoads.add(table.blockId);
+
+                      this._loadTitleAsync(table.blockId, table)
+                        .then(resolvedTitle => {
+                          this._titleCache.set(table.blockId, {
+                            title: resolvedTitle,
+                            loading: false,
+                          });
+
+                          this._pendingTitleLoads.delete(table.blockId);
+
+                          if (this._pendingTitleLoads.size === 0) {
+                            this._triggerMenuRefresh();
+                          }
+                        })
+                        .catch(() => {
+                          this._pendingTitleLoads.delete(table.blockId);
+
+                          const fallbackTitle =
+                            table.title ||
+                            `Untitled Database (${table.id.slice(-6)})`;
+                          this._titleCache.set(table.blockId, {
+                            title: fallbackTitle,
+                            loading: false,
+                          });
+
+                          if (this._pendingTitleLoads.size === 0) {
+                            this._triggerMenuRefresh();
+                          }
+                        });
+                    } else {
+                      this._titleCache.set(table.blockId, {
+                        title: blockTitle,
+                        loading: false,
+                      });
+                    }
+                  }
+
                   const isCurrentSource = currentSource?.tableId === table.id;
 
                   return menu.action({
@@ -148,6 +335,37 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
               }),
             ],
           },
+          refreshData: (() => {
+            return async () => {
+              const freshTables = this._getAvailableTablesFromWorkspace();
+              await this._loadTitlesAsync(freshTables);
+
+              return [
+                menu.action({
+                  name: 'New Database',
+                  select: () => this._handleCreateNewDatabase(),
+                }),
+                menu.group({
+                  items: freshTables.map(table => {
+                    const cachedResult = this._titleCache.get(table.blockId);
+                    const blockTitle =
+                      cachedResult?.title ||
+                      this._getDynamicTitleForBlock(table.blockId, table) ||
+                      `Untitled Database (${table.id.slice(-6)})`;
+
+                    const currentSource = this._getCurrentSourceInfo();
+                    const isCurrentSource = currentSource?.tableId === table.id;
+
+                    return menu.action({
+                      name: blockTitle,
+                      isSelected: isCurrentSource,
+                      select: () => this._handleSwitchToTable(table),
+                    });
+                  }),
+                }),
+              ];
+            };
+          })(),
         }),
         menu.action({
           prefix: CopyIcon(),
@@ -159,7 +377,7 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
               .then(() => {
                 toast(this.host, 'Copied to clipboard');
               })
-              .catch(console.error);
+              .catch(() => {});
           },
         }),
         menu.group({
@@ -179,9 +397,16 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
       ],
     });
 
-    popMenu(popupTargetFromElement(e.currentTarget as HTMLElement), {
-      options,
-    });
+    options.onClose = () => {
+      this._currentMenuHandler = null;
+    };
+
+    this._currentMenuHandler = popMenu(
+      popupTargetFromElement(e.currentTarget as HTMLElement),
+      {
+        options,
+      }
+    );
   };
 
   private _dataSource?: DatabaseBlockDataSource;
@@ -200,10 +425,7 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
       if (sourceModel && sourceModel.props.title) {
         titleToDisplay = sourceModel.props.title;
       } else {
-        console.warn(
-          '[DatabaseBlock] Could not resolve source model for tableId:',
-          this.model.props.tableId
-        );
+        // Could not resolve source model
       }
     }
 
@@ -387,9 +609,7 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
         if (sourceModel) {
           modelToUse = sourceModel;
         } else {
-          console.warn(
-            '[DatabaseBlockComponent] Could not resolve source model, using local model'
-          );
+          // Could not resolve source model, using local model
         }
       }
 
@@ -614,7 +834,7 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
   }
 
   /**
-   * Get current source information for this database
+   * Get current source info for this database
    */
   private _getCurrentSourceInfo(): { tableId: string } | null {
     const tableId = this.model.props.tableId;
@@ -625,29 +845,30 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
   }
 
   /**
-   * Get available tables from workspace meta
+   * Get available tables from workspace metadata
    */
-  private _getAvailableTablesFromWorkspace(): any[] {
+  private _getAvailableTablesFromWorkspace(): Array<{
+    id: string;
+    blockId: string;
+    title?: string;
+  }> {
     try {
       const workspace = this.store.workspace;
+
       if (!workspace?.meta?.tables) {
         return [];
       }
 
       const tables = Object.values(workspace.meta.tables);
+
       return tables;
-    } catch (error) {
-      console.error(
-        '[DatabaseBlockComponent] Error accessing workspace meta:',
-        error
-      );
+    } catch {
       return [];
     }
   }
 
   /**
-   * Resolve the target model when this database is linked to a source
-   * Returns the source database model or null if not found
+   * Resolve target model when this database is linked to a source
    */
   private _resolveTargetModel(): DatabaseBlockModel | null {
     const tableId = this.model.props.tableId;
@@ -658,16 +879,11 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
     try {
       const workspace = this.store.workspace;
       if (!workspace?.meta?.tables) {
-        console.warn('[DatabaseBlockComponent] No workspace meta tables found');
         return null;
       }
 
       const tableMeta = workspace.meta.tables[tableId];
       if (!tableMeta?.blockId) {
-        console.warn(
-          '[DatabaseBlockComponent] No table meta or blockId found for tableId:',
-          tableId
-        );
         return null;
       }
 
@@ -676,68 +892,174 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
         !sourceBlock?.model ||
         sourceBlock.model.flavour !== 'affine:database'
       ) {
-        console.warn(
-          '[DatabaseBlockComponent] Source block not found or not a database:',
-          tableMeta.blockId
-        );
         return null;
       }
 
       return sourceBlock.model as DatabaseBlockModel;
-    } catch (error) {
-      console.error(
-        '[DatabaseBlockComponent] Error resolving target model:',
-        error
-      );
+    } catch {
       return null;
     }
   }
 
   /**
-   * Get dynamic title for a block by blockId
-   * Retrieves the title from the database block model
+   * Get dynamic title for source block - fast version with immediate results
    */
-  private _getDynamicTitleForBlock(blockId: string): string | null {
+  private _getDynamicTitleForBlock(blockId: string, tableMeta?: any): string {
     try {
-      const block = this.store.getBlock(blockId);
-      if (!block?.model) {
-        console.warn(
-          '[DatabaseBlockComponent] Block or model not found for blockId:',
-          blockId
-        );
-        return null;
-      }
+      let pageId = tableMeta?.pageId;
+      let actualBlockId = tableMeta?.blockId || blockId;
 
-      if (block.model.flavour === 'affine:database') {
-        const databaseModel = block.model as DatabaseBlockModel;
-
-        if (databaseModel.props.title) {
-          const titleText = databaseModel.props.title.toString();
-          if (titleText && titleText.trim()) {
-            return titleText.trim();
-          }
-        }
-
-        return null;
-      }
-
-      if ('title' in block.model.props && block.model.props.title) {
-        const titleProperty = block.model.props.title as any;
-        if (titleProperty && typeof titleProperty.toString === 'function') {
-          const titleText = titleProperty.toString();
-          if (titleText && titleText.trim()) {
-            return titleText.trim();
-          }
+      if (!pageId && blockId.includes(':')) {
+        const parts = blockId.split(':');
+        if (parts.length === 2) {
+          pageId = parts[0];
+          actualBlockId = parts[1];
         }
       }
 
-      return null;
-    } catch (error) {
-      console.error(
-        '[DatabaseBlockComponent] Error getting block title:',
-        error
-      );
-      return null;
+      // Try local resolution first if no pageId
+      if (!pageId) {
+        const localBlock = this.store.getBlock(actualBlockId);
+        if (localBlock?.model?.flavour === 'affine:database') {
+          const localTitle = (localBlock.model.props as any).title?.toString();
+          if (localTitle && localTitle.trim()) {
+            return localTitle.trim();
+          }
+        }
+        return tableMeta?.title || blockId;
+      }
+
+      // Cross-document check only if document is already loaded
+      const doc = this.store.workspace?.getDoc(pageId);
+      if (doc?.loaded) {
+        const store = doc.getStore();
+        const block = store?.getBlock(actualBlockId);
+
+        if (block?.model && block.model.flavour === 'affine:database') {
+          const props = block.model.props as any;
+          const title = props.title?.toString();
+          if (title && title.trim()) {
+            return title.trim();
+          }
+        }
+      }
+
+      // Immediate fallback
+      const fallbackTitle = tableMeta?.title || blockId;
+      return fallbackTitle;
+    } catch {
+      return tableMeta?.title || blockId;
+    }
+  }
+
+  /**
+   * Load title asynchronously for cross-document database block
+   */
+  private async _loadTitleAsync(
+    blockId: string,
+    tableMeta?: any
+  ): Promise<string> {
+    try {
+      let pageId = tableMeta?.pageId;
+      let actualBlockId = tableMeta?.blockId || blockId;
+
+      if (!pageId && blockId.includes(':')) {
+        const parts = blockId.split(':');
+        if (parts.length === 2) {
+          pageId = parts[0];
+          actualBlockId = parts[1];
+        }
+      }
+
+      if (!pageId) {
+        return tableMeta?.title || blockId;
+      }
+
+      const doc = this.store.workspace?.getDoc(pageId);
+      if (!doc) {
+        return tableMeta?.title || blockId;
+      }
+
+      if (!doc.loaded) {
+        doc.load();
+      }
+
+      const delays = [100, 300, 500, 1000, 2000];
+
+      for (const delay of delays) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+
+        if (doc.loaded) {
+          const store = doc.getStore();
+          const block = store?.getBlock(actualBlockId);
+
+          if (block?.model && block.model.flavour === 'affine:database') {
+            const props = block.model.props as any;
+            const title = props.title?.toString();
+            if (title && title.trim()) {
+              return title.trim();
+            }
+          }
+        }
+      }
+
+      return tableMeta?.title || blockId;
+    } catch {
+      return tableMeta?.title || blockId;
+    }
+  }
+
+  /**
+   * Load titles asynchronously for all tables
+   */
+  private async _loadTitlesAsync(
+    tables: Array<{ id: string; blockId: string; title?: string }>
+  ): Promise<void> {
+    const tablesToLoad = tables.filter(table => {
+      const cached = this._titleCache.get(table.blockId);
+      return !cached || cached.loading;
+    });
+
+    if (tablesToLoad.length === 0) {
+      return;
+    }
+
+    const loadPromises = tablesToLoad.map(async table => {
+      const blockId = table.blockId;
+
+      this._titleCache.set(blockId, {
+        title: `Loading... (${table.id.slice(-6)})`,
+        loading: true,
+      });
+      this._pendingTitleLoads.add(blockId);
+
+      try {
+        const title = await this._loadTitleAsync(blockId, table);
+        this._titleCache.set(blockId, { title, loading: false });
+      } catch {
+        const fallbackTitle =
+          table.title || `Untitled Database (${table.id.slice(-6)})`;
+        this._titleCache.set(blockId, { title: fallbackTitle, loading: false });
+      } finally {
+        this._pendingTitleLoads.delete(blockId);
+      }
+    });
+
+    await Promise.allSettled(loadPromises);
+
+    this._triggerMenuRefresh();
+  }
+
+  /**
+   * Trigger menu refresh when async titles are loaded
+   */
+  private _triggerMenuRefresh(): void {
+    if (this._currentMenuHandler) {
+      this._currentMenuHandler.refresh().catch(() => {
+        if (this._currentMenuHandler) {
+          this._currentMenuHandler.reopen();
+        }
+      });
     }
   }
 
@@ -751,8 +1073,10 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
 
     this._dispatchUsageEvent('database-usage-increased', table.id);
 
+    const cachedResult = this._titleCache.get(table.blockId);
     const dynamicTitle =
-      this._getDynamicTitleForBlock(table.blockId) ||
+      cachedResult?.title ||
+      this._getDynamicTitleForBlock(table.blockId, table) ||
       `Untitled Database (${table.id.slice(-6)})`;
 
     toast(this.host, `Switched to database: ${dynamicTitle}`);
@@ -762,9 +1086,6 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
     setTimeout(() => {
       const currentDataSource = this._dataSource;
       if (currentDataSource && currentDataSource.model.id !== table.blockId) {
-        console.warn(
-          '[DatabaseBlockComponent] Primary refresh failed, trying aggressive recreation...'
-        );
         this._forceDataSourceRecreation();
       }
     }, 500);
@@ -782,9 +1103,6 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
     setTimeout(() => {
       const currentDataSource = this._dataSource;
       if (currentDataSource && this.model.props.tableId) {
-        console.warn(
-          '[DatabaseBlockComponent] New database creation may need aggressive refresh...'
-        );
         this._forceDataSourceRecreation();
       }
     }, 500);
@@ -821,13 +1139,13 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
         );
         throw new Error('Database is in use');
       }
-    } catch (error) {
-      console.error('[DatabaseBlockComponent] Error checking usage:', error);
+    } catch {
+      // Error checking usage
     }
   }
 
   /**
-   * Dispatch usage events for workspace meta management
+   * Dispatch usage events for workspace metadata management
    */
   private _dispatchUsageEvent(eventType: string, tableId: string): void {
     const event = new CustomEvent(eventType, {
@@ -838,8 +1156,7 @@ export class DatabaseBlockComponent extends CaptionedBlockComponent<DatabaseBloc
   }
 
   /**
-   * Force refresh of data source when source changes
-   * Ensures all DataView subcomponents update correctly without manual reload
+   * Force data source refresh when source changes
    */
   private _refreshDataSource(): void {
     this._dataSourceRefreshCounter++;
